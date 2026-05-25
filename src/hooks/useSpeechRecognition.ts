@@ -2,22 +2,13 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { SpeechRecognition } from '@capacitor-community/speech-recognition';
 
-interface SpeechRecognitionErrorEvent extends Event {
-  error: string;
-  message: string;
-}
 
-interface SpeechRecognitionEvent extends Event {
-  results: any;
-  resultIndex: number;
-}
 
 export const useSpeechRecognition = () => {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
   
-  const recognitionRef = useRef<any>(null);
   const isListeningRef = useRef(false);
   
   // Guardamos el texto base antes de iniciar una sesión de grabación
