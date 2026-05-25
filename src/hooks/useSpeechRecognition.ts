@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { SpeechRecognition } from '@capacitor-community/speech-recognition';
 
 interface SpeechRecognitionErrorEvent extends Event {
   error: string;
@@ -20,14 +22,41 @@ export const useSpeechRecognition = () => {
   
   // Guardamos el texto final confirmado de las frases anteriores
   const finalTranscriptRef = useRef('');
+  const lastProcessedRef = useRef('');
 
   useEffect(() => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    // Si estamos en un dispositivo nativo (Android/iOS), preparamos el plugin de Capacitor
+    let listenerHandle: any = null;
+
+    if (Capacitor.isNativePlatform()) {
+      SpeechRecognition.requestPermissions().then(result => {
+        if (result.speechRecognition !== 'granted') {
+          setError('Permiso de micrófono denegado en la app.');
+        }
+      });
+
+      // Registrar el listener una sola vez
+      SpeechRecognition.addListener('partialResults', (data: any) => {
+        if (data.matches && data.matches.length > 0) {
+          // El plugin devuelve la frase entera que está escuchando en matches[0]
+          setTranscript(finalTranscriptRef.current + ' ' + data.matches[0]);
+        }
+      }).then(handle => {
+        listenerHandle = handle;
+      });
+
+      return () => {
+        if (listenerHandle) listenerHandle.remove();
+      };
+    }
+
+    // --- LÓGICA WEB ORIGINAL (Solo se ejecuta en el navegador de la PC) ---
+    const WebSpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     
-    if (SpeechRecognition && !recognitionRef.current) {
-      const rec = new SpeechRecognition();
+    if (WebSpeechRecognition && !recognitionRef.current) {
+      const rec = new WebSpeechRecognition();
       rec.continuous = true;
-      rec.interimResults = true; // Fundamental para real-time typing
+      rec.interimResults = true; 
       rec.lang = 'es-AR';
 
       rec.onstart = () => {
@@ -42,10 +71,14 @@ export const useSpeechRecognition = () => {
 
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i];
+          const text = result[0].transcript;
           if (result.isFinal) {
-            newFinalTranscript += result[0].transcript + ' ';
+            if (text.trim() !== lastProcessedRef.current.trim()) {
+              newFinalTranscript += text + ' ';
+              lastProcessedRef.current = text;
+            }
           } else {
-            interimTranscript += result[0].transcript;
+            interimTranscript += text;
           }
         }
 
@@ -53,16 +86,15 @@ export const useSpeechRecognition = () => {
           finalTranscriptRef.current += newFinalTranscript;
         }
 
-        // El texto visible es lo final consolidado + lo que se está diciendo ahora
         setTranscript(finalTranscriptRef.current + interimTranscript);
       };
 
       rec.onerror = (event: SpeechRecognitionErrorEvent) => {
         console.error('Speech recognition error:', event.error);
         if (event.error === 'no-speech') {
-          setError('No se detectó audio. Habla un poco más cerca del micrófono.');
+          setError('No se detectó audio.');
         } else if (event.error === 'network') {
-          setError('Error de conexión. Verifica tu internet.');
+          setError('Error de red. (Si estás en Brave o Chromium en PC, la voz no funciona ahí).');
           isListeningRef.current = false;
           setIsListening(false);
         } else if (event.error === 'not-allowed') {
@@ -70,13 +102,11 @@ export const useSpeechRecognition = () => {
           isListeningRef.current = false;
           setIsListening(false);
         } else {
-          setError('No pudimos entenderte, intenta nuevamente.');
+          setError('Error al reconocer voz.');
         }
       };
 
       rec.onend = () => {
-        // Si el usuario NO clickeó explícitamente "detener", significa que el navegador
-        // lo cortó por inactividad. Lo reiniciamos para mantener el micrófono abierto.
         if (isListeningRef.current) {
           try {
             rec.start();
@@ -90,7 +120,7 @@ export const useSpeechRecognition = () => {
       };
 
       recognitionRef.current = rec;
-    } else if (!SpeechRecognition) {
+    } else if (!WebSpeechRecognition) {
       setError('Tu navegador no soporta reconocimiento de voz nativo.');
     }
 
@@ -104,28 +134,78 @@ export const useSpeechRecognition = () => {
     };
   }, []);
 
-  const startListening = useCallback(() => {
-    if (recognitionRef.current && !isListeningRef.current) {
-      setError(null);
-      isListeningRef.current = true;
+  const startListening = useCallback(async () => {
+    // Evitar iniciar si ya estamos escuchando
+    if (isListeningRef.current) return;
+
+    setError(null);
+    isListeningRef.current = true;
+    setIsListening(true);
+
+    if (Capacitor.isNativePlatform()) {
       try {
-        recognitionRef.current.start();
+        const { available } = await SpeechRecognition.available();
+        if (!available) {
+          setError("El reconocimiento de voz no está disponible en este dispositivo.");
+          setIsListening(false);
+          isListeningRef.current = false;
+          return;
+        }
+
+        // Si ya había texto, lo guardamos como final
+        if (transcript.trim()) {
+          finalTranscriptRef.current = transcript.trim();
+        }
+
+        await SpeechRecognition.start({
+          language: 'es-AR',
+          maxResults: 1,
+          prompt: 'Te escucho...',
+          partialResults: true,
+          popup: false, // Fundamental: false para que no bloquee tu UI
+        });
+
       } catch (err) {
-        console.error("Failed to start recognition", err);
+        console.error("Native Speech Error:", err);
+        setError("Error al iniciar el micrófono.");
+        setIsListening(false);
         isListeningRef.current = false;
+      }
+    } else {
+      // WEB
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.start();
+        } catch (err) {
+          console.error("Failed to start Web recognition", err);
+          isListeningRef.current = false;
+          setIsListening(false);
+        }
       }
     }
   }, []);
 
-  const stopListening = useCallback(() => {
+  const stopListening = useCallback(async () => {
     isListeningRef.current = false;
-    if (recognitionRef.current) {
+    setIsListening(false);
+
+    if (Capacitor.isNativePlatform()) {
       try {
-        recognitionRef.current.stop();
+        await SpeechRecognition.stop();
+        // Guardamos lo que haya quedado
+        finalTranscriptRef.current = transcript.trim();
       } catch (err) {
-        console.error("Failed to stop recognition", err);
+        console.error("Failed to stop Native recognition", err);
       }
-      setIsListening(false);
+    } else {
+      // WEB
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (err) {
+          console.error("Failed to stop Web recognition", err);
+        }
+      }
     }
   }, []);
 
@@ -137,6 +217,7 @@ export const useSpeechRecognition = () => {
   // Para permitir edición manual bidireccional desde el componente padre
   const manuallySetTranscript = useCallback((text: string) => {
     finalTranscriptRef.current = text;
+    lastProcessedRef.current = '';
     setTranscript(text);
   }, []);
 

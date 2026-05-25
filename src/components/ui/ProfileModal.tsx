@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, User as UserIcon, Check } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
@@ -12,6 +13,14 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ onClose }) => {
   const [displayName, setDisplayName] = useState(user?.user_metadata?.display_name || 'Nicolás');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  // Bloquear scroll del body
+  React.useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, []);
 
   const handleSave = async () => {
     if (!user) return;
@@ -39,13 +48,14 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ onClose }) => {
     year: 'numeric'
   });
 
-  return (
-    <div className="absolute inset-0 z-[100] flex items-center justify-center p-6">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6">
       {/* Invisible backdrop to close when clicking outside */}
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose}></div>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={onClose}></div>
       
       {/* Popover Menu / Modal Centrado */}
-      <div className="relative bg-zinc-900/95 backdrop-blur-xl w-[320px] rounded-[32px] p-6 border border-zinc-800 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+      <div className="relative bg-zinc-900/95 backdrop-blur-xl w-[320px] rounded-[32px] p-6 border border-zinc-800 shadow-2xl animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh] overflow-hidden m-auto">
+        <div className="overflow-y-auto flex-1 hide-scrollbar">
         <button 
           onClick={onClose}
           className="absolute top-4 right-4 p-2 bg-zinc-800/50 hover:bg-zinc-700 text-zinc-400 hover:text-white rounded-full transition-colors"
@@ -93,7 +103,9 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ onClose }) => {
             )}
           </button>
         </div>
+        </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

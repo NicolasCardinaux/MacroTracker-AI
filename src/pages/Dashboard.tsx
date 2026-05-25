@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { MobileLayout } from '../components/layout/MobileLayout';
 import { ProgressRing } from '../components/ui/ProgressRing';
 import { ProgressBar } from '../components/ui/ProgressBar';
@@ -8,7 +9,7 @@ import { FoodEditModal } from '../components/ui/FoodEditModal';
 import { ProfileModal } from '../components/ui/ProfileModal';
 import { Logo } from '../components/ui/Logo';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
-import { User as UserIcon, X as XIcon, ChevronLeft, ChevronRight } from 'lucide-react';
+import { User as UserIcon, X as XIcon, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import type { DailyGoals, FoodLog, GeminiNutritionResponse, MealType } from '../types';
@@ -27,6 +28,7 @@ export const Dashboard: React.FC = () => {
   // UI States
   const [activeCategoryInput, setActiveCategoryInput] = useState<MealType | null>(null);
   const [editingLog, setEditingLog] = useState<FoodLog | null>(null);
+  const [logToDelete, setLogToDelete] = useState<number | null>(null);
   const [showProfile, setShowProfile] = useState(false);
   const [showNewCategoryModal, setShowNewCategoryModal] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -35,6 +37,18 @@ export const Dashboard: React.FC = () => {
   useEffect(() => {
     if (user) loadData();
   }, [user, selectedDate]);
+
+  // Bloquear scroll cuando los modales inline están abiertos
+  useEffect(() => {
+    if (showNewCategoryModal || logToDelete !== null || showProfile) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [showNewCategoryModal, logToDelete, showProfile]);
 
   const loadData = async () => {
     if (!user) return;
@@ -157,13 +171,17 @@ export const Dashboard: React.FC = () => {
   };
 
   // --- HANDLERS DE EDICIÓN ---
-  const handleDeleteLog = async (id: number) => {
-    if (window.confirm('¿Estás seguro de eliminar este registro?')) {
-      const success = await api.deleteFoodLog(id);
-      if (success) {
-        setLogs(logs.filter(l => l.id !== id));
-      }
+  const handleDeleteLog = (id: number) => {
+    setLogToDelete(id);
+  };
+
+  const confirmDelete = async () => {
+    if (logToDelete === null) return;
+    const success = await api.deleteFoodLog(logToDelete);
+    if (success) {
+      setLogs(logs.filter(l => l.id !== logToDelete));
     }
+    setLogToDelete(null);
   };
 
   const handleSaveEdit = async (id: number, updatedData: Partial<FoodLog>) => {
@@ -350,10 +368,11 @@ export const Dashboard: React.FC = () => {
         <ProfileModal onClose={() => setShowProfile(false)} />
       )}
 
-      {showNewCategoryModal && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-6">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowNewCategoryModal(false)}></div>
-          <div className="relative bg-zinc-900/95 backdrop-blur-xl w-[320px] rounded-[32px] p-6 border border-zinc-800 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+      {showNewCategoryModal && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setShowNewCategoryModal(false)}></div>
+          <div className="relative bg-zinc-900/95 backdrop-blur-xl w-[320px] rounded-[32px] p-6 border border-zinc-800 shadow-2xl animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh] overflow-hidden m-auto">
+            <div className="overflow-y-auto flex-1 hide-scrollbar">
             <h3 className="text-xl font-bold text-white mb-2 text-center">Nueva Categoría</h3>
             <p className="text-sm text-zinc-400 mb-6 text-center">Ej. Pre-entreno, Batido Nocturno.</p>
             
@@ -397,8 +416,42 @@ export const Dashboard: React.FC = () => {
                 Cancelar
               </button>
             </div>
+            </div>
           </div>
-        </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Modal de Confirmación de Borrado */}
+      {logToDelete !== null && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setLogToDelete(null)}></div>
+          <div className="relative bg-zinc-900/95 backdrop-blur-xl w-[320px] rounded-[32px] p-6 border border-zinc-800 shadow-2xl animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh] overflow-hidden m-auto">
+            <div className="overflow-y-auto flex-1 hide-scrollbar">
+            <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-500/20">
+              <Trash2 className="w-8 h-8 text-red-500" />
+            </div>
+            <h3 className="text-xl font-bold text-white mb-2 text-center">¿Eliminar Comida?</h3>
+            <p className="text-sm text-zinc-400 mb-6 text-center">Esta acción no se puede deshacer.</p>
+            
+            <div className="flex flex-col gap-3">
+              <button 
+                onClick={confirmDelete}
+                className="w-full py-4 bg-red-500 hover:bg-red-600 text-white font-bold rounded-2xl transition-colors"
+              >
+                Sí, Eliminar
+              </button>
+              <button 
+                onClick={() => setLogToDelete(null)}
+                className="w-full py-4 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold rounded-2xl transition-colors"
+              >
+                Cancelar
+              </button>
+            </div>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </MobileLayout>
   );

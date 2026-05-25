@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Mic, Send, X, Square } from 'lucide-react';
 import type { GeminiNutritionResponse, MealType } from '../../types';
 
@@ -38,10 +39,19 @@ export const CategoryInputModal: React.FC<CategoryInputModalProps> = ({
     }
   }, [transcript, isListening]);
 
-  return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[1000] flex items-center justify-center p-6 animate-in fade-in">
-      <div className="bg-zinc-900 w-full max-w-md rounded-[32px] p-8 border border-zinc-800 shadow-2xl relative flex flex-col max-h-[90vh]">
-        
+  // Bloquear scroll del body
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, []);
+
+  return createPortal(
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[9999] flex items-center justify-center p-4 sm:p-6 animate-in fade-in">
+      <div className="bg-zinc-900 w-full max-w-md rounded-[32px] p-6 border border-zinc-800 shadow-2xl relative flex flex-col max-h-[90vh] overflow-hidden m-auto">
+        <div className="overflow-y-auto flex-1 hide-scrollbar">
+          
         {/* Header */}
         <div className="flex justify-between items-center mb-6">
           <div>
@@ -118,7 +128,7 @@ export const CategoryInputModal: React.FC<CategoryInputModalProps> = ({
 
         {/* LOADING STATE */}
         {isProcessing && (
-          <div className="flex flex-col items-center py-16">
+          <div className="flex flex-col items-center py-12">
             <div className="relative flex items-center justify-center mb-6">
               <div className="w-16 h-16 border-4 border-zinc-800 rounded-full"></div>
               <div className="w-16 h-16 border-4 border-primary-500 border-t-transparent rounded-full animate-spin absolute top-0 left-0"></div>
@@ -127,7 +137,9 @@ export const CategoryInputModal: React.FC<CategoryInputModalProps> = ({
             <p className="text-sm text-zinc-400 mt-2 text-center max-w-[250px]">Gemini está calculando calorías y macronutrientes exactos.</p>
           </div>
         )}
+        </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
