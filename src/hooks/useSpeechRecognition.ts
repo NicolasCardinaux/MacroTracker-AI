@@ -6,7 +6,8 @@ interface SpeechRecognitionErrorEvent extends Event {
 }
 
 interface SpeechRecognitionEvent extends Event {
-  results: SpeechRecognitionResultList;
+  results: any;
+  resultIndex: number;
 }
 
 export const useSpeechRecognition = () => {

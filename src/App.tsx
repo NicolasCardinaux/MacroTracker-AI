@@ -30,11 +30,7 @@ const AppContent: React.FC = () => {
       case 'settings': return <Settings onBack={() => setCurrentView('dashboard')} />;
       case 'avances': return <Avances onBack={() => setCurrentView('dashboard')} />;
       case 'historial': return <Historial onBack={() => setCurrentView('dashboard')} />;
-      default: return <Dashboard 
-        onNavigateToAnalytics={() => setCurrentView('analytics')} 
-        onNavigateToSettings={() => setCurrentView('settings')}
-        onNavigateToAvances={() => setCurrentView('avances')}
-      />;
+      default: return <Dashboard />;
     }
   };
 

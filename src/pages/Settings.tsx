@@ -10,7 +10,7 @@ export const Settings: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [goals, setGoals] = useState<DailyGoals | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [newMeal, setNewMeal] = useState('');
+
 
   useEffect(() => {
     if (user) loadGoals();

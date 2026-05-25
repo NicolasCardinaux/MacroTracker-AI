@@ -99,19 +99,7 @@ export const Avances: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     return 0;
   };
 
-  const getProjectionText = () => {
-    const change = getExpectedChange();
-    if (change === 0) return 'Mantener peso estable';
-    
-    let amount = change;
-    if (frequency === 'daily') amount = change / 7;
-    if (frequency === 'monthly') amount = change * 4.33;
-    
-    const verb = change < 0 ? 'Perder' : 'Ganar';
-    const time = frequency === 'daily' ? 'al día' : frequency === 'weekly' ? 'por semana' : 'al mes';
-    
-    return `${verb} ${Math.abs(amount).toFixed(2)} kg ${time}`;
-  };
+
 
   const getProjectionRate = () => {
     return Math.abs(getExpectedChange() / 7); // base daily rate

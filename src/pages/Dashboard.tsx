@@ -13,7 +13,7 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import type { DailyGoals, FoodLog, GeminiNutritionResponse, MealType } from '../types';
 
-export const Dashboard: React.FC<{ onNavigateToAnalytics: () => void, onNavigateToSettings: () => void, onNavigateToAvances: () => void }> = ({ onNavigateToAnalytics, onNavigateToSettings, onNavigateToAvances }) => {
+export const Dashboard: React.FC = () => {
   const { user, signOut } = useAuth();
   const { isListening, startListening, stopListening, transcript, resetTranscript, manuallySetTranscript, error: speechError } = useSpeechRecognition();
   
@@ -125,7 +125,7 @@ export const Dashboard: React.FC<{ onNavigateToAnalytics: () => void, onNavigate
     const isCustom = !['Desayuno', 'Almuerzo', 'Merienda', 'Cena', 'Snack'].includes(mealType);
     const dbMealType = isCustom ? 'Snack' : (mealType as MealType);
 
-    const foods = aiData.foods || [{ name: rawInput, amount: '', calories: aiData.calories || 0, protein: aiData.protein || 0, carbs: aiData.carbs || 0, fats: aiData.fats || 0 }];
+    const foods = aiData.foods?.length > 0 ? aiData.foods : [{ name: rawInput, amount: '', calories: 0, protein: 0, carbs: 0, fats: 0 }];
     
     const logsToInsert = foods.map(f => ({
       date: selectedDate,
@@ -179,7 +179,7 @@ export const Dashboard: React.FC<{ onNavigateToAnalytics: () => void, onNavigate
       }
     }
     
-    const finalData = { ...updatedData, raw_input: newRawInput };
+    const finalData = { ...updatedData, raw_input: newRawInput || '' };
 
     const success = await api.updateFoodLog(id, finalData);
     if (success) {

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, Trash2, Edit2, Plus } from 'lucide-react';
+import { ChevronDown, Plus } from 'lucide-react';
 import type { FoodLog, MealType } from '../../types';
 
 import { FoodCard } from './FoodCard';

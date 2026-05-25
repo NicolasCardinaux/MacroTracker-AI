@@ -14,7 +14,6 @@ interface CategoryInputModalProps {
   onCancel: () => void;
   onProcessText: (text: string) => void;
   onTextChange: (text: string) => void;
-  onSave: (mealType: MealType) => void;
 }
 
 export const CategoryInputModal: React.FC<CategoryInputModalProps> = ({
@@ -28,8 +27,7 @@ export const CategoryInputModal: React.FC<CategoryInputModalProps> = ({
   onStopVoice,
   onCancel,
   onProcessText,
-  onTextChange,
-  onSave,
+  onTextChange
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 

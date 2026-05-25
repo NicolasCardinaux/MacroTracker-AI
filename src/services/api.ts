@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import type { DailyGoals, FoodLog, GeminiNutritionResponse, MealType, BodyMetric } from '../types';
+import type { DailyGoals, FoodLog, GeminiNutritionResponse, BodyMetric } from '../types';
 
 export const api = {
   // --- METAS DIARIAS ---
