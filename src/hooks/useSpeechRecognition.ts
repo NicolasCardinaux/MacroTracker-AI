@@ -20,9 +20,8 @@ export const useSpeechRecognition = () => {
   const recognitionRef = useRef<any>(null);
   const isListeningRef = useRef(false);
   
-  // Guardamos el texto final confirmado de las frases anteriores
-  const finalTranscriptRef = useRef('');
-  const lastProcessedRef = useRef('');
+  // Guardamos el texto base antes de iniciar una sesión de grabación
+  const baseTranscriptRef = useRef('');
 
   useEffect(() => {
     // Si estamos en un dispositivo nativo (Android/iOS), preparamos el plugin de Capacitor
@@ -39,7 +38,8 @@ export const useSpeechRecognition = () => {
       SpeechRecognition.addListener('partialResults', (data: any) => {
         if (data.matches && data.matches.length > 0) {
           // El plugin devuelve la frase entera que está escuchando en matches[0]
-          setTranscript(finalTranscriptRef.current + ' ' + data.matches[0]);
+          const newText = (baseTranscriptRef.current + ' ' + data.matches[0]).trim();
+          setTranscript(newText);
         }
       }).then(handle => {
         listenerHandle = handle;
@@ -66,27 +66,14 @@ export const useSpeechRecognition = () => {
       };
 
       rec.onresult = (event: SpeechRecognitionEvent) => {
-        let interimTranscript = '';
-        let newFinalTranscript = '';
+        let currentSessionText = '';
 
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const result = event.results[i];
-          const text = result[0].transcript;
-          if (result.isFinal) {
-            if (text.trim() !== lastProcessedRef.current.trim()) {
-              newFinalTranscript += text + ' ';
-              lastProcessedRef.current = text;
-            }
-          } else {
-            interimTranscript += text;
-          }
+        for (let i = 0; i < event.results.length; i++) {
+          currentSessionText += event.results[i][0].transcript;
         }
 
-        if (newFinalTranscript) {
-          finalTranscriptRef.current += newFinalTranscript;
-        }
-
-        setTranscript(finalTranscriptRef.current + interimTranscript);
+        const newText = (baseTranscriptRef.current + ' ' + currentSessionText).trim();
+        setTranscript(newText);
       };
 
       rec.onerror = (event: SpeechRecognitionErrorEvent) => {
@@ -109,6 +96,11 @@ export const useSpeechRecognition = () => {
       rec.onend = () => {
         if (isListeningRef.current) {
           try {
+            // El navegador cortó la sesión por inactividad. Guardamos el texto y reiniciamos.
+            setTranscript(prev => {
+              baseTranscriptRef.current = prev;
+              return prev;
+            });
             rec.start();
           } catch (e) {
             isListeningRef.current = false;
@@ -141,6 +133,12 @@ export const useSpeechRecognition = () => {
     setError(null);
     isListeningRef.current = true;
     setIsListening(true);
+    
+    // Guardar el texto actual como base usando el estado más reciente
+    setTranscript(prev => {
+      baseTranscriptRef.current = prev.trim();
+      return prev;
+    });
 
     if (Capacitor.isNativePlatform()) {
       try {
@@ -152,10 +150,7 @@ export const useSpeechRecognition = () => {
           return;
         }
 
-        // Si ya había texto, lo guardamos como final
-        if (transcript.trim()) {
-          finalTranscriptRef.current = transcript.trim();
-        }
+        // await SpeechRecognition.start() ya se llama más abajo
 
         await SpeechRecognition.start({
           language: 'es-AR',
@@ -192,8 +187,10 @@ export const useSpeechRecognition = () => {
     if (Capacitor.isNativePlatform()) {
       try {
         await SpeechRecognition.stop();
-        // Guardamos lo que haya quedado
-        finalTranscriptRef.current = transcript.trim();
+        setTranscript(prev => {
+          baseTranscriptRef.current = prev.trim();
+          return prev;
+        });
       } catch (err) {
         console.error("Failed to stop Native recognition", err);
       }
@@ -210,14 +207,13 @@ export const useSpeechRecognition = () => {
   }, []);
 
   const resetTranscript = useCallback(() => {
-    finalTranscriptRef.current = '';
+    baseTranscriptRef.current = '';
     setTranscript('');
   }, []);
 
   // Para permitir edición manual bidireccional desde el componente padre
   const manuallySetTranscript = useCallback((text: string) => {
-    finalTranscriptRef.current = text;
-    lastProcessedRef.current = '';
+    baseTranscriptRef.current = text;
     setTranscript(text);
   }, []);
 
