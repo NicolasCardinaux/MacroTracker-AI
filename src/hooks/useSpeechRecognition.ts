@@ -22,7 +22,7 @@ export const useSpeechRecognition = () => {
   const finalTranscriptRef = useRef('');
 
   useEffect(() => {
-    const SpeechRecognition = window.SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     
     if (SpeechRecognition && !recognitionRef.current) {
       const rec = new SpeechRecognition();

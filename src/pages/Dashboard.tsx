@@ -335,7 +335,6 @@ export const Dashboard: React.FC = () => {
           onCancel={closeInputModal}
           onProcessText={handleProcessText}
           onTextChange={manuallySetTranscript}
-          onSave={(mealType) => handleConfirmSaveNew(mealType, transcript, iaResponse!)}
         />
       )}
 
