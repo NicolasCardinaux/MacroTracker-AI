@@ -156,9 +156,9 @@ export const api = {
   },
 
   // --- IA (EDGE FUNCTION) ---
-  async analyzeFoodWithGemini(transcript: string): Promise<GeminiNutritionResponse> {
+  async analyzeFoodWithGemini(transcript: string, audioBase64?: string, mimeType?: string): Promise<GeminiNutritionResponse> {
     const { data, error } = await supabase.functions.invoke('gemini-nutrition', {
-      body: { transcript }
+      body: { transcript, audioBase64, mimeType }
     });
 
     if (error) {
@@ -174,5 +174,18 @@ export const api = {
     }
 
     return data as GeminiNutritionResponse;
+  },
+
+  async transcribeAudioWithGemini(audioBase64: string, mimeType: string): Promise<string> {
+    const { data, error } = await supabase.functions.invoke('gemini-nutrition', {
+      body: { audioBase64, mimeType, action: 'transcribe' }
+    });
+
+    if (error) {
+      console.error('Edge function error (transcribe):', error);
+      throw new Error('Fallo al transcribir el audio.');
+    }
+
+    return data.transcript || '';
   }
 };

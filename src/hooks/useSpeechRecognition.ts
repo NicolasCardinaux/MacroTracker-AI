@@ -22,6 +22,10 @@ export const useSpeechRecognition = () => {
   
   // Guardamos el texto base antes de iniciar una sesión de grabación
   const baseTranscriptRef = useRef('');
+  
+  // Variables para la grabación Web con Gemini
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   useEffect(() => {
     // Si estamos en un dispositivo nativo (Android/iOS), preparamos el plugin de Capacitor
@@ -50,79 +54,11 @@ export const useSpeechRecognition = () => {
       };
     }
 
-    // --- LÓGICA WEB ORIGINAL (Solo se ejecuta en el navegador de la PC) ---
-    const WebSpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    
-    if (WebSpeechRecognition && !recognitionRef.current) {
-      const rec = new WebSpeechRecognition();
-      rec.continuous = true;
-      // Fundamental: En 'false' evitamos el espantoso bug de duplicación de Chrome Android en la Web
-      rec.interimResults = false; 
-      rec.lang = 'es-AR';
-
-      rec.onstart = () => {
-        isListeningRef.current = true;
-        setIsListening(true);
-        setError(null);
-      };
-
-      rec.onresult = (event: SpeechRecognitionEvent) => {
-        let currentSessionText = '';
-
-        for (let i = 0; i < event.results.length; i++) {
-          currentSessionText += event.results[i][0].transcript;
-        }
-
-        const newText = (baseTranscriptRef.current + ' ' + currentSessionText).trim();
-        setTranscript(newText);
-      };
-
-      rec.onerror = (event: SpeechRecognitionErrorEvent) => {
-        console.error('Speech recognition error:', event.error);
-        if (event.error === 'no-speech') {
-          setError('No se detectó audio.');
-        } else if (event.error === 'network') {
-          setError('Error de red. (Si estás en Brave o Chromium en PC, la voz no funciona ahí).');
-          isListeningRef.current = false;
-          setIsListening(false);
-        } else if (event.error === 'not-allowed') {
-          setError('Permiso de micrófono denegado.');
-          isListeningRef.current = false;
-          setIsListening(false);
-        } else {
-          setError('Error al reconocer voz.');
-        }
-      };
-
-      rec.onend = () => {
-        if (isListeningRef.current) {
-          try {
-            // El navegador cortó la sesión por inactividad. Guardamos el texto y reiniciamos.
-            setTranscript(prev => {
-              baseTranscriptRef.current = prev;
-              return prev;
-            });
-            rec.start();
-          } catch (e) {
-            isListeningRef.current = false;
-            setIsListening(false);
-          }
-        } else {
-          setIsListening(false);
-        }
-      };
-
-      recognitionRef.current = rec;
-    } else if (!WebSpeechRecognition) {
-      setError('Tu navegador no soporta reconocimiento de voz nativo.');
-    }
-
+    // WEB: Limpieza si se desmonta
     return () => {
-      if (recognitionRef.current) {
-        isListeningRef.current = false;
-        try {
-          recognitionRef.current.stop();
-        } catch (e) {}
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+        mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
       }
     };
   }, []);
@@ -168,15 +104,25 @@ export const useSpeechRecognition = () => {
         isListeningRef.current = false;
       }
     } else {
-      // WEB
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.start();
-        } catch (err) {
-          console.error("Failed to start Web recognition", err);
-          isListeningRef.current = false;
-          setIsListening(false);
-        }
+      // WEB (Grabar audio puro y usar Gemini)
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = mediaRecorder;
+        audioChunksRef.current = [];
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+          }
+        };
+
+        mediaRecorder.start();
+      } catch (err) {
+        console.error("Failed to start MediaRecorder", err);
+        setError("Error al acceder al micrófono de tu PC.");
+        setIsListening(false);
+        isListeningRef.current = false;
       }
     }
   }, []);
@@ -196,13 +142,37 @@ export const useSpeechRecognition = () => {
         console.error("Failed to stop Native recognition", err);
       }
     } else {
-      // WEB
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch (err) {
-          console.error("Failed to stop Web recognition", err);
-        }
+      // WEB (Detener grabación y enviar a la IA)
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.onstop = async () => {
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          mediaRecorderRef.current?.stream.getTracks().forEach(track => track.stop());
+          
+          setTranscript(prev => (prev + " (Procesando audio...)").trim());
+          
+          const reader = new FileReader();
+          reader.readAsDataURL(audioBlob);
+          reader.onloadend = async () => {
+            const base64data = reader.result as string;
+            const [header, data] = base64data.split(',');
+            const mimeType = header.split(':')[1].split(';')[0];
+            
+            try {
+              const { api } = await import('../services/api');
+              const text = await api.transcribeAudioWithGemini(data, mimeType);
+              
+              const newText = (baseTranscriptRef.current + ' ' + text).trim();
+              setTranscript(newText);
+              baseTranscriptRef.current = newText;
+            } catch (e) {
+               console.error("Error AI transcription:", e);
+               setError('Fallo al transcribir por IA.');
+               setTranscript(baseTranscriptRef.current);
+            }
+          };
+        };
+        
+        mediaRecorderRef.current.stop();
       }
     }
   }, []);

@@ -11,17 +11,66 @@ serve(async (req) => {
   }
 
   try {
-    const { transcript } = await req.json()
+    const { transcript, audioBase64, mimeType, action } = await req.json()
     const apiKey = Deno.env.get('GEMINI_API_KEY')
 
     if (!apiKey) {
       throw new Error('Missing Gemini API Key')
     }
 
-    if (!transcript) {
-      throw new Error('No transcript provided')
+    if (!transcript && !audioBase64) {
+      throw new Error('No transcript or audio provided')
     }
 
+    // --- MODO: SOLO TRANSCRIBIR AUDIO (STT) ---
+    if (action === 'transcribe' && audioBase64) {
+      const sttInstruction = `
+Eres un asistente experto en transcripción de audio.
+Tu única tarea es transcribir EXACTAMENTE lo que el usuario dice en el audio.
+El audio está en idioma Español (Argentina).
+No agregues comentarios, no respondas a las preguntas del audio, no agregues formato markdown.
+SOLO devuelve el texto plano transcrito. Si el audio está vacío o no se entiende, devuelve "".
+`
+      const sttResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: mimeType || "audio/webm",
+                    data: audioBase64
+                  }
+                },
+                { text: "Transcribe este audio." }
+              ]
+            }
+          ],
+          systemInstruction: {
+            parts: [{ text: sttInstruction }]
+          },
+          generationConfig: {
+            temperature: 0.1,
+          }
+        })
+      })
+
+      const sttData = await sttResponse.json()
+      if (sttData.error) throw new Error(sttData.error.message)
+      const rawContent = sttData.candidates[0].content.parts[0].text
+
+      return new Response(
+        JSON.stringify({ transcript: rawContent.trim() }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
+    }
+
+    // --- MODO: ANALIZAR MACROS (El comportamiento original) ---
     const systemInstruction = `
 Eres un asistente experto en nutrición y bases de datos de alimentos en Argentina. 
 Tu tarea es recibir una descripción de alimentos y dividirla en ALIMENTOS INDIVIDUALES con sus macros exactos.
@@ -58,7 +107,15 @@ Estructura JSON requerida:
         contents: [
           {
             role: "user",
-            parts: [{ text: transcript }]
+            parts: [
+              ...(transcript ? [{ text: transcript }] : []),
+              ...(audioBase64 ? [{
+                inlineData: {
+                  mimeType: mimeType || "audio/webm",
+                  data: audioBase64
+                }
+              }] : [])
+            ]
           }
         ],
         systemInstruction: {
