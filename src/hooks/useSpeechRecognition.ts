@@ -56,7 +56,8 @@ export const useSpeechRecognition = () => {
     if (WebSpeechRecognition && !recognitionRef.current) {
       const rec = new WebSpeechRecognition();
       rec.continuous = true;
-      rec.interimResults = true; 
+      // Fundamental: En 'false' evitamos el espantoso bug de duplicación de Chrome Android en la Web
+      rec.interimResults = false; 
       rec.lang = 'es-AR';
 
       rec.onstart = () => {
