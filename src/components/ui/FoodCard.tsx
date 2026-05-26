@@ -9,6 +9,43 @@ interface FoodCardProps {
 }
 
 export const FoodCard: React.FC<FoodCardProps> = ({ log, onEdit, onDelete }) => {
+  const getPortions = (log: FoodLog) => {
+    if (log.raw_input.toLowerCase().includes('gr') || log.raw_input.toLowerCase().includes('gramos')) {
+       const match = log.raw_input.match(/\((.*?)\)/);
+       if (match) {
+          return match[1].split('+').length;
+       }
+       return 1;
+    }
+    return log.quantity;
+  }
+  
+  const portions = getPortions(log);
+
+  const getFormattedName = (log: FoodLog, portions: number) => {
+     let raw = log.raw_input;
+     
+     if (raw.startsWith('[CUSTOM:')) {
+        raw = raw.substring(raw.indexOf(']') + 1).trim();
+     }
+
+     // Remove leading numbers and units that might have been cached in the DB (e.g. "1 Huevo", "150 gr de Arroz")
+     raw = raw.replace(/^(\d+(?:\.\d+)?\s*(?:unidades|unidad|gramos|gramo|gr|g|ml)?\s*(?:de\s*)?)/i, '').trim();
+     
+     raw = raw.charAt(0).toUpperCase() + raw.slice(1);
+     
+     if (portions <= 1) return raw;
+
+     if (raw.includes('(')) {
+        const parts = raw.split(' (');
+        const baseName = parts[0];
+        const rest = parts.slice(1).join(' (');
+        return `${baseName} (x${portions}) (${rest}`;
+     }
+     
+     return `${raw} (x${portions})`;
+  }
+
   return (
     <div className="bg-zinc-950/80 backdrop-blur-sm p-4 rounded-2xl flex flex-col gap-3 border border-zinc-800 hover:border-zinc-700 transition-colors group relative overflow-hidden">
       {/* Glow Effect Top Border */}
@@ -17,7 +54,7 @@ export const FoodCard: React.FC<FoodCardProps> = ({ log, onEdit, onDelete }) => 
       <div className="flex justify-between items-start">
         <div className="pr-4">
           <p className="text-sm font-semibold text-zinc-100 leading-tight">
-            {log.raw_input.charAt(0).toUpperCase() + log.raw_input.slice(1)}
+            {getFormattedName(log, portions)}
           </p>
         </div>
         <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20 whitespace-nowrap">

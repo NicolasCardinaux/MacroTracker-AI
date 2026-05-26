@@ -9,7 +9,7 @@ import { FoodEditModal } from '../components/ui/FoodEditModal';
 import { ProfileModal } from '../components/ui/ProfileModal';
 import { Logo } from '../components/ui/Logo';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
-import { User as UserIcon, X as XIcon, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
+import { User as UserIcon, X as XIcon, ChevronLeft, ChevronRight, Trash2, AlertTriangle, CheckCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import type { DailyGoals, FoodLog, GeminiNutritionResponse, MealType } from '../types';
@@ -29,10 +29,13 @@ export const Dashboard: React.FC = () => {
   const [activeCategoryInput, setActiveCategoryInput] = useState<MealType | null>(null);
   const [editingLog, setEditingLog] = useState<FoodLog | null>(null);
   const [logToDelete, setLogToDelete] = useState<number | null>(null);
+  const [errorAlert, setErrorAlert] = useState<string | null>(null);
+  const [successAlert, setSuccessAlert] = useState<string | null>(null);
   const [showProfile, setShowProfile] = useState(false);
   const [showNewCategoryModal, setShowNewCategoryModal] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [iaResponse, setIaResponse] = useState<GeminiNutritionResponse | null>(null);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) loadData();
@@ -40,7 +43,7 @@ export const Dashboard: React.FC = () => {
 
   // Bloquear scroll cuando los modales inline están abiertos
   useEffect(() => {
-    if (showNewCategoryModal || logToDelete !== null || showProfile) {
+    if (showNewCategoryModal || logToDelete !== null || showProfile || errorAlert !== null || successAlert !== null) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
@@ -48,7 +51,7 @@ export const Dashboard: React.FC = () => {
     return () => {
       document.body.style.overflow = '';
     };
-  }, [showNewCategoryModal, logToDelete, showProfile]);
+  }, [showNewCategoryModal, logToDelete, showProfile, errorAlert, successAlert]);
 
   const loadData = async () => {
     if (!user) return;
@@ -119,16 +122,15 @@ export const Dashboard: React.FC = () => {
 
   const handleProcessText = async (text: string) => {
     if (text.trim().length < 3 || !activeCategoryInput) return;
-    
     setIsProcessing(true);
+    setApiError(null);
     if (isListening) stopListening();
 
     try {
-      const result = await api.analyzeFoodWithGemini(text);
-      // Auto-guardar directamente
+      const result = await api.analyzeFoodWithGemini(text, undefined, undefined, user?.id);
       await handleConfirmSaveNew(activeCategoryInput, text, result);
     } catch (error: any) {
-      alert(error.message || "Error al procesar con IA. Intenta de nuevo.");
+      setApiError(error.message || "Error al procesar con IA. Intenta de nuevo.");
       setIsProcessing(false);
     }
   };
@@ -139,25 +141,37 @@ export const Dashboard: React.FC = () => {
     const isCustom = !['Desayuno', 'Almuerzo', 'Merienda', 'Cena', 'Snack'].includes(mealType);
     const dbMealType = isCustom ? 'Snack' : (mealType as MealType);
 
-    const foods = aiData.foods?.length > 0 ? aiData.foods : [{ name: rawInput, amount: '', calories: 0, protein: 0, carbs: 0, fats: 0 }];
+    const foods = aiData.foods?.length > 0 ? aiData.foods : [{ name: rawInput, amount: '', quantity: 1, unit: 'unidad', base_calories: 0, base_protein: 0, base_carbs: 0, base_fats: 0, total_calories: 0, total_protein: 0, total_carbs: 0, total_fats: 0 }];
     
-    const logsToInsert = foods.map(f => ({
-      date: selectedDate,
-      meal_type: dbMealType,
-      raw_input: isCustom ? `[CUSTOM:${mealType}] ${f.amount} ${f.name}`.trim() : `${f.amount} ${f.name}`.trim(),
-      calories: Math.round(Number(f.calories)),
-      protein: Math.round(Number(f.protein)),
-      carbs: Math.round(Number(f.carbs)),
-      fats: Math.round(Number(f.fats))
-    }));
+    const logsToInsert = foods.map(f => {
+      const q = Number(f.quantity) || 1;
+      const u = f.unit === 'unidad' ? (q === 1 ? '' : 'unidades ') : (f.unit + ' de ');
+      const cleanName = `${q} ${u}${f.name}`.trim().replace(/\s+/g, ' ');
+      const finalInputText = isCustom ? `[CUSTOM:${mealType}] ${cleanName}` : cleanName;
 
-    const newLogs = await api.addFoodLogs(user.id, logsToInsert);
+      return {
+        date: selectedDate,
+        meal_type: dbMealType,
+        raw_input: finalInputText,
+        quantity: Number(f.quantity) || 1,
+        base_calories: Math.round(Number(f.base_calories || 0)),
+        base_protein: Math.round(Number(f.base_protein || 0)),
+        base_carbs: Math.round(Number(f.base_carbs || 0)),
+        base_fats: Math.round(Number(f.base_fats || 0)),
+        calories: Math.round(Number(f.total_calories !== undefined ? f.total_calories : (f as any).calories || 0)),
+        protein: Math.round(Number(f.total_protein !== undefined ? f.total_protein : (f as any).protein || 0)),
+        carbs: Math.round(Number(f.total_carbs !== undefined ? f.total_carbs : (f as any).carbs || 0)),
+        fats: Math.round(Number(f.total_fats !== undefined ? f.total_fats : (f as any).fats || 0))
+      };
+    });
+
+    const newLogs = await api.addFoodLogs(user.id, logsToInsert as any);
 
     if (newLogs && newLogs.length > 0) {
       setLogs([...logs, ...newLogs]);
       closeInputModal();
     } else {
-      alert("Error al guardar en la base de datos.");
+      setApiError("Error al guardar en la base de datos.");
       setIsProcessing(false);
     }
   };
@@ -165,6 +179,7 @@ export const Dashboard: React.FC = () => {
   const closeInputModal = () => {
     setActiveCategoryInput(null);
     setIaResponse(null);
+    setApiError(null);
     resetTranscript();
     setIsProcessing(false);
     if (isListening) stopListening();
@@ -201,10 +216,20 @@ export const Dashboard: React.FC = () => {
 
     const success = await api.updateFoodLog(id, finalData);
     if (success) {
+      if (updatedData.base_calories !== undefined && newRawInput && user?.id) {
+        api.updateDictionaryFromEdit(newRawInput, {
+          base_calories: updatedData.base_calories,
+          base_protein: updatedData.base_protein || 0,
+          base_carbs: updatedData.base_carbs || 0,
+          base_fats: updatedData.base_fats || 0
+        }, user.id);
+      }
       setLogs(logs.map(l => l.id === id ? { ...l, ...finalData } : l));
       setEditingLog(null);
+      setSuccessAlert("¡Alimento modificado con éxito!");
+      setTimeout(() => setSuccessAlert(null), 2500);
     } else {
-      alert("Error al actualizar.");
+      setErrorAlert("Error al actualizar.");
     }
   };
 
@@ -347,7 +372,7 @@ export const Dashboard: React.FC = () => {
           transcript={transcript}
           isProcessing={isProcessing}
           iaResponse={iaResponse}
-          error={speechError}
+          error={speechError || apiError}
           onStartVoice={startListening}
           onStopVoice={stopListening}
           onCancel={closeInputModal}
@@ -453,6 +478,40 @@ export const Dashboard: React.FC = () => {
         </div>,
         document.body
       )}
+      {errorAlert !== null && createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setErrorAlert(null)}></div>
+          <div className="relative bg-[#1A1A1A] w-full max-w-sm rounded-[32px] p-8 text-center border border-zinc-800/50 shadow-2xl animate-scale-up">
+              <div className="w-16 h-16 bg-orange-500/10 text-orange-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                 <AlertTriangle size={32} />
+              </div>
+              <h3 className="text-xl font-bold text-white mb-2">¡Atención!</h3>
+              <p className="text-zinc-400 mb-8">{errorAlert}</p>
+              <div className="space-y-3">
+              <button onClick={() => setErrorAlert(null)} className="w-full py-4 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-2xl transition-colors">Entendido</button>
+              </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {successAlert !== null && createPortal(
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setSuccessAlert(null)}></div>
+          <div className="relative bg-[#1A1A1A] w-full max-w-sm rounded-[32px] p-8 text-center border border-zinc-800/50 shadow-2xl animate-scale-up">
+              <div className="w-16 h-16 bg-green-500/10 text-green-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                 <CheckCircle size={32} />
+              </div>
+              <h3 className="text-xl font-bold text-white mb-2">¡Excelente!</h3>
+              <p className="text-zinc-400 mb-8">{successAlert}</p>
+              <div className="space-y-3">
+              <button onClick={() => setSuccessAlert(null)} className="w-full py-4 bg-green-500 hover:bg-green-600 text-white font-bold rounded-2xl transition-colors">Aceptar</button>
+              </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
     </MobileLayout>
   );
 };

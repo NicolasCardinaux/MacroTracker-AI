@@ -12,6 +12,7 @@
 ## ✨ Funcionalidades Principales
 - 🎙️ **Reconocimiento de Voz Nativo:** Dictado en tiempo real sin pausas artificiales.
 - 🧠 **Cerebro de Inteligencia Artificial:** Integración con Google Gemini 2.5 Flash para extraer gramos, calorías, proteínas, carbohidratos y grasas con precisión decimal.
+- 🌍 **Diccionario Inteligente & Crowdsourcing:** La app cuenta con una arquitectura de base de datos híbrida (Single Table Design). Cada usuario tiene sus propios clones locales de los alimentos que priorizan sus modificaciones, mientras que la base global calcula un **promedio matemático continuo** de las calorías basándose en los aportes de toda la comunidad (Sabiduría Colectiva).
 - 🍩 **Anillos de Progreso Multisegmentados:** Interfaz premium tipo *Apple Fitness* donde los colores de las diferentes comidas se mezclan fluidamente con efecto de profundidad 3D y desenfoque (blur).
 - 📈 **Proyecciones Físicas (Predictor):** Calcula automáticamente el ritmo de aumento o pérdida de peso en base a objetivos (Déficit, Mantener, Superávit) sin exigir un registro diario.
 - ⚙️ **Comidas Personalizadas Dinámicas:** Agrega tus propias categorías (Ej: *Batido Post-Entreno* o *Pre-entreno*) directamente en la interfaz.
@@ -61,7 +62,24 @@ En la configuración de tu proyecto en Vercel (Settings > Environment Variables)
 *Con esto configurado, el Front-End conectará automáticamente.*
 
 ### 2. Base de Datos en Supabase
-Asegúrate de haber corrido las migraciones SQL en Supabase (las tablas de `users`, `daily_goals`, `food_logs` y `body_metrics`). Para las versiones avanzadas, tu tabla `daily_goals` debe tener:
+Asegúrate de haber corrido las migraciones SQL en Supabase (las tablas de `users`, `daily_goals`, `food_logs`, `food_dictionary` y `body_metrics`). 
+
+Para habilitar el **Diccionario Inteligente Local-First**, tu tabla `food_dictionary` debe estar configurada así:
+```sql
+ALTER TABLE food_dictionary ADD COLUMN user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+ALTER TABLE food_dictionary ADD COLUMN source TEXT DEFAULT 'Global';
+ALTER TABLE food_dictionary ADD COLUMN usage_count INTEGER DEFAULT 0;
+
+-- Habilitar RLS (Seguridad de Nivel de Fila)
+ALTER TABLE food_dictionary ENABLE ROW LEVEL SECURITY;
+
+-- Política de lectura: los usuarios solo pueden leer la base global o sus alimentos clonados
+CREATE POLICY "Permitir lectura de alimentos globales o propios" 
+ON food_dictionary FOR SELECT 
+USING (user_id IS NULL OR user_id = auth.uid());
+```
+
+Para las opciones de personalización avanzadas, tu tabla `daily_goals` debe tener:
 ```sql
 ALTER TABLE daily_goals ADD COLUMN custom_meals JSONB DEFAULT '[]'::jsonb;
 ALTER TABLE daily_goals ADD COLUMN physical_goal TEXT DEFAULT 'maintain';

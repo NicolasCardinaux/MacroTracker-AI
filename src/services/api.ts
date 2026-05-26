@@ -156,9 +156,9 @@ export const api = {
   },
 
   // --- IA (EDGE FUNCTION) ---
-  async analyzeFoodWithGemini(transcript: string, audioBase64?: string, mimeType?: string): Promise<GeminiNutritionResponse> {
+  async analyzeFoodWithGemini(transcript: string, audioBase64?: string, mimeType?: string, userId?: string): Promise<GeminiNutritionResponse> {
     const { data, error } = await supabase.functions.invoke('gemini-nutrition', {
-      body: { transcript, audioBase64, mimeType }
+      body: { transcript, audioBase64, mimeType, action: 'analyze', user_id: userId }
     });
 
     if (error) {
@@ -174,6 +174,27 @@ export const api = {
     }
 
     return data as GeminiNutritionResponse;
+  },
+
+  async updateDictionaryFromEdit(foodName: string, macros: { base_calories: number, base_protein: number, base_carbs: number, base_fats: number }, userId: string): Promise<void> {
+    try {
+      const { error } = await supabase.functions.invoke('gemini-nutrition', {
+        body: { 
+          action: 'update_dictionary',
+          food_name: foodName,
+          macros: macros,
+          user_id: userId
+        }
+      });
+
+      if (error) {
+         console.warn('Learning failed:', error.message || error);
+      } else {
+         console.log('Learning & Crowdsourcing successful for', foodName);
+      }
+    } catch (e) {
+      console.error('Error updating dictionary from edit:', e);
+    }
   },
 
   async transcribeAudioWithGemini(audioBase64: string, mimeType: string): Promise<string> {

@@ -22,16 +22,27 @@ export interface FoodLog {
   protein: number;
   carbs: number;
   fats: number;
+  quantity: number;
+  base_calories: number;
+  base_protein: number;
+  base_carbs: number;
+  base_fats: number;
   created_at: string;
 }
 
 export interface GeminiFoodItem {
   name: string;
   amount: string;
-  calories: number;
-  protein: number;
-  carbs: number;
-  fats: number;
+  quantity: number;
+  unit: string;
+  base_calories: number;
+  base_protein: number;
+  base_carbs: number;
+  base_fats: number;
+  total_calories: number;
+  total_protein: number;
+  total_carbs: number;
+  total_fats: number;
 }
 
 export interface GeminiNutritionResponse {
