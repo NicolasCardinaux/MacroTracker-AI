@@ -410,7 +410,7 @@ export const Dashboard: React.FC = () => {
                 if (e.key === 'Enter') {
                   const val = e.currentTarget.value.trim();
                   if (val && user) {
-                    const nl = await api.addFoodLogs(user.id, [{ date: selectedDate, meal_type: 'Snack', raw_input: `[CUSTOM:${val}] __CATEGORY__`, calories: 0, protein: 0, carbs: 0, fats: 0 }]);
+                    const nl = await api.addFoodLogs(user.id, [{ date: selectedDate, meal_type: 'Snack', raw_input: `[CUSTOM:${val}] __CATEGORY__`, quantity: 1, base_calories: 0, base_protein: 0, base_carbs: 0, base_fats: 0, calories: 0, protein: 0, carbs: 0, fats: 0 }]);
                     if (nl) setLogs([...logs, ...nl]);
                     setShowNewCategoryModal(false);
                   }
@@ -425,7 +425,7 @@ export const Dashboard: React.FC = () => {
                   const inputEl = document.getElementById('new-category-input') as HTMLInputElement;
                   const val = inputEl?.value.trim();
                   if (val && user) {
-                    const nl = await api.addFoodLogs(user.id, [{ date: selectedDate, meal_type: 'Snack', raw_input: `[CUSTOM:${val}] __CATEGORY__`, calories: 0, protein: 0, carbs: 0, fats: 0 }]);
+                    const nl = await api.addFoodLogs(user.id, [{ date: selectedDate, meal_type: 'Snack', raw_input: `[CUSTOM:${val}] __CATEGORY__`, quantity: 1, base_calories: 0, base_protein: 0, base_carbs: 0, base_fats: 0, calories: 0, protein: 0, carbs: 0, fats: 0 }]);
                     if (nl) setLogs([...logs, ...nl]);
                     setShowNewCategoryModal(false);
                   }

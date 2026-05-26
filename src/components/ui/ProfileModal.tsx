@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Check, Activity, Target, Flame, Scale, User as UserIcon } from 'lucide-react';
+import { X, Check, Activity, Target, Flame, User as UserIcon } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { calculateNutritionalNeeds } from '../../utils/calculator';
