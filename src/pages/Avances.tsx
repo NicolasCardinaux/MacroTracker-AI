@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { MobileLayout } from '../components/layout/MobileLayout';
-import { ChevronLeft, Plus, Scale, TrendingDown, Target } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { createPortal } from 'react-dom';
+import { ChevronLeft, Plus, Scale, TrendingDown, Target, Maximize2, X } from 'lucide-react';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
+import { getLocalDateString } from '../utils/date';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { supabase } from '../lib/supabase';
@@ -18,6 +20,7 @@ export const Avances: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [targetWeight, setTargetWeight] = useState<number>(0);
   const [goalType, setGoalType] = useState<'deficit' | 'maintain' | 'surplus'>('maintain');
   const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'monthly'>('weekly');
+  const [isExpanded, setIsExpanded] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -60,7 +63,7 @@ export const Avances: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     }
 
     const metric = await api.addBodyMetric(user.id, {
-      date: new Date().toISOString().split('T')[0],
+      date: getLocalDateString(),
       weight
     });
 
@@ -90,7 +93,7 @@ export const Avances: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   });
 
   const currentWeight = finalMetrics.length > 0 ? Number(finalMetrics[finalMetrics.length - 1].weight) : 0;
-  const startWeight = finalMetrics.length > 0 ? Number(finalMetrics[0].weight) : 0;
+  const startWeight = user?.user_metadata?.initial_weight || (finalMetrics.length > 0 ? Number(finalMetrics[0].weight) : 0);
 
   // Calculo de proyección
   const getExpectedChange = () => {
@@ -213,8 +216,12 @@ export const Avances: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
         <div className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-6 backdrop-blur-xl">
           <div className="flex items-center justify-between mb-6">
-            <h3 className="font-bold text-zinc-100 text-lg">Evolución de Peso</h3>
-            <TrendingDown className="w-5 h-5 text-zinc-500" />
+            <h3 className="font-bold text-zinc-100 text-lg flex items-center gap-2">
+              Evolución de Peso <TrendingDown className="w-5 h-5 text-zinc-500" />
+            </h3>
+            <button onClick={() => setIsExpanded(true)} className="p-2 bg-zinc-800/50 hover:bg-zinc-700/50 rounded-xl text-zinc-400 hover:text-white transition-colors">
+              <Maximize2 className="w-4 h-4" />
+            </button>
           </div>
           
           {loading ? (
@@ -229,7 +236,13 @@ export const Avances: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           ) : (
             <div className="h-64 w-full">
               <ResponsiveContainer width="100%" height="100%" minHeight={250} minWidth={1}>
-                <LineChart data={chartData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
+                <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorPeso" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
                   <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#71717a' }} dy={10} />
                   <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#71717a' }} domain={['auto', 'auto']} />
@@ -237,19 +250,67 @@ export const Avances: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '12px', color: '#f4f4f5' }}
                     itemStyle={{ color: '#10b981', fontWeight: 'bold' }}
                   />
-                  <Line 
+                  <Area 
                     type="monotone" 
                     dataKey="peso" 
                     stroke="#10b981" 
                     strokeWidth={4} 
-                    dot={{ fill: '#18181b', stroke: '#10b981', strokeWidth: 3, r: 5 }}
+                    fillOpacity={1}
+                    fill="url(#colorPeso)"
                     activeDot={{ r: 8, stroke: '#10b981', strokeWidth: 4, fill: '#18181b' }}
                   />
-                </LineChart>
+                </AreaChart>
               </ResponsiveContainer>
             </div>
           )}
         </div>
+
+        {/* Modal Gráfico Expandido */}
+        {isExpanded && createPortal(
+          <div className="fixed inset-0 z-[9999] flex flex-col bg-zinc-950/95 backdrop-blur-2xl animate-in fade-in duration-300">
+            <div className="flex items-center justify-between p-6 border-b border-zinc-800/50 bg-zinc-950">
+              <div>
+                <h2 className="text-xl font-bold text-white">Evolución de Peso</h2>
+                <p className="text-sm text-zinc-400">Análisis detallado</p>
+              </div>
+              <button onClick={() => setIsExpanded(false)} className="p-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-full transition-colors">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="flex-1 w-full p-6 pt-12 flex items-center justify-center">
+              <div className="w-full h-full max-h-[60vh]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartData} margin={{ top: 20, right: 10, left: -20, bottom: 20 }}>
+                    <defs>
+                      <linearGradient id="colorPesoExp" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.4}/>
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
+                    <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 14, fill: '#a1a1aa' }} dy={15} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 14, fill: '#a1a1aa' }} domain={['auto', 'auto']} dx={-10} />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '16px', color: '#f4f4f5', padding: '12px' }}
+                      itemStyle={{ color: '#10b981', fontWeight: 'bold', fontSize: '16px' }}
+                    />
+                    <Area 
+                      type="monotone" 
+                      dataKey="peso" 
+                      stroke="#10b981" 
+                      strokeWidth={5} 
+                      fillOpacity={1}
+                      fill="url(#colorPesoExp)"
+                      dot={{ fill: '#18181b', stroke: '#10b981', strokeWidth: 3, r: 6 }}
+                      activeDot={{ r: 10, stroke: '#10b981', strokeWidth: 5, fill: '#18181b' }}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
 
         {/* List of Entries */}
         <div className="space-y-3">

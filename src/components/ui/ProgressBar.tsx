@@ -14,7 +14,9 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({ current, max, label, c
   return (
     <div className="w-full">
       <div className="flex justify-between items-end mb-1.5">
-        <span className="text-sm font-semibold text-zinc-300">{label}</span>
+        <span className="text-sm font-semibold text-zinc-300">
+          {label}
+        </span>
         <div className="flex items-baseline space-x-1">
           <span className={`text-sm font-bold ${isOver ? 'text-red-500' : 'text-zinc-100'}`}>
             {current}g

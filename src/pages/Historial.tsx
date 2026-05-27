@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { MobileLayout } from '../components/layout/MobileLayout';
 import { ChevronLeft, CalendarDays, Flame, Beef, Wheat, Droplet } from 'lucide-react';
+import { getLocalDateString } from '../utils/date';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import type { FoodLog } from '../types';
@@ -42,7 +43,7 @@ export const Historial: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   const getDisplayDate = (dateStr: string) => {
     const d = new Date(dateStr + 'T00:00:00');
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
     if (dateStr === today) return "Hoy";
     
     const formatted = d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });

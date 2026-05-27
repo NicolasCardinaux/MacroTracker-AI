@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { getLocalDateString } from '../utils/date';
 import { createPortal } from 'react-dom';
 import { MobileLayout } from '../components/layout/MobileLayout';
 import { ProgressRing } from '../components/ui/ProgressRing';
@@ -6,7 +7,7 @@ import { ProgressBar } from '../components/ui/ProgressBar';
 import { MealAccordion } from '../components/ui/MealAccordion';
 import { CategoryInputModal } from '../components/ui/CategoryInputModal';
 import { FoodEditModal } from '../components/ui/FoodEditModal';
-import { ProfileModal } from '../components/ui/ProfileModal';
+import { AccountModal } from '../components/ui/AccountModal';
 import { Logo } from '../components/ui/Logo';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { User as UserIcon, X as XIcon, ChevronLeft, ChevronRight, Trash2, AlertTriangle, CheckCircle } from 'lucide-react';
@@ -23,7 +24,7 @@ export const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   
   // Date State
-  const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState<string>(() => getLocalDateString());
   
   // UI States
   const [activeCategoryInput, setActiveCategoryInput] = useState<MealType | null>(null);
@@ -31,7 +32,7 @@ export const Dashboard: React.FC = () => {
   const [logToDelete, setLogToDelete] = useState<number | null>(null);
   const [errorAlert, setErrorAlert] = useState<string | null>(null);
   const [successAlert, setSuccessAlert] = useState<string | null>(null);
-  const [showProfile, setShowProfile] = useState(false);
+  const [showAccountModal, setShowAccountModal] = useState(false);
   const [showNewCategoryModal, setShowNewCategoryModal] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [iaResponse, setIaResponse] = useState<GeminiNutritionResponse | null>(null);
@@ -43,7 +44,7 @@ export const Dashboard: React.FC = () => {
 
   // Bloquear scroll cuando los modales inline están abiertos
   useEffect(() => {
-    if (showNewCategoryModal || logToDelete !== null || showProfile || errorAlert !== null || successAlert !== null) {
+    if (showNewCategoryModal || logToDelete !== null || showAccountModal || errorAlert !== null || successAlert !== null) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
@@ -51,7 +52,7 @@ export const Dashboard: React.FC = () => {
     return () => {
       document.body.style.overflow = '';
     };
-  }, [showNewCategoryModal, logToDelete, showProfile, errorAlert, successAlert]);
+  }, [showNewCategoryModal, logToDelete, showAccountModal, errorAlert, successAlert]);
 
   const loadData = async () => {
     if (!user) return;
@@ -107,7 +108,7 @@ export const Dashboard: React.FC = () => {
 
   const getDisplayDate = (dateStr: string) => {
     const d = new Date(dateStr + 'T00:00:00');
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
     if (dateStr === today) return "Hoy";
     
     const formatted = d.toLocaleDateString('es-AR', { month: 'short', day: 'numeric' });
@@ -251,7 +252,7 @@ export const Dashboard: React.FC = () => {
         
         <div className="flex gap-2 items-center">
           <button 
-            onClick={() => setShowProfile(true)}
+            onClick={() => setShowAccountModal(true)}
             className="flex items-center hover:opacity-80 transition-opacity mr-2"
             title="Tu Perfil"
           >
@@ -270,7 +271,7 @@ export const Dashboard: React.FC = () => {
         <div className="px-5 py-6 flex flex-col items-center">
           
           {/* Date Selector Centrado */}
-          <div className="w-full max-w-[240px] flex items-center justify-between bg-zinc-900/50 backdrop-blur-md border border-zinc-800/80 rounded-2xl p-1 mb-8 shadow-sm">
+          <div className="w-full max-w-[220px] flex items-center justify-between bg-zinc-900/50 backdrop-blur-md border border-zinc-800/80 rounded-2xl p-1 mb-3 shadow-sm">
             <button onClick={() => shiftDate(-1)} className="p-2 text-zinc-400 hover:text-white transition-colors bg-zinc-950 rounded-xl shadow-sm">
               <ChevronLeft className="w-5 h-5" />
             </button>
@@ -279,11 +280,25 @@ export const Dashboard: React.FC = () => {
             </span>
             <button 
               onClick={() => shiftDate(1)} 
-              disabled={selectedDate === new Date().toISOString().split('T')[0]}
-              className={`p-2 transition-colors rounded-xl shadow-sm ${selectedDate === new Date().toISOString().split('T')[0] ? 'text-zinc-800 bg-transparent cursor-not-allowed' : 'text-zinc-400 bg-zinc-950 hover:text-white'}`}
+              disabled={selectedDate === getLocalDateString()}
+              className={`p-2 transition-colors rounded-xl shadow-sm ${selectedDate === getLocalDateString() ? 'text-zinc-800 bg-transparent cursor-not-allowed' : 'text-zinc-400 bg-zinc-950 hover:text-white'}`}
             >
               <ChevronRight className="w-5 h-5" />
             </button>
+          </div>
+
+          {/* Resumen de Objetivos Diarios */}
+          <div className="w-full max-w-sm flex flex-col items-center justify-center mb-6 bg-zinc-900/30 backdrop-blur-sm border border-zinc-800/40 rounded-[20px] py-1.5 px-3">
+            <span className="text-[9px] uppercase tracking-[0.2em] text-zinc-500 font-bold mb-0.5">Objetivo Diario</span>
+            <div className="flex items-center justify-center gap-2.5 text-[11px] font-bold text-zinc-300 w-full">
+              <span className="text-emerald-400">{goals.target_calories} <span className="text-[9px] text-emerald-500/80">kcal</span></span>
+              <span className="text-zinc-700">•</span>
+              <span className="text-blue-400">{goals.target_protein}g <span className="text-[9px] text-blue-500/80">P</span></span>
+              <span className="text-zinc-700">•</span>
+              <span className="text-yellow-400">{goals.target_carbs}g <span className="text-[9px] text-yellow-500/80">C</span></span>
+              <span className="text-zinc-700">•</span>
+              <span className="text-purple-400">{goals.target_fats}g <span className="text-[9px] text-purple-500/80">G</span></span>
+            </div>
           </div>
           
           <ProgressRing 
@@ -292,6 +307,12 @@ export const Dashboard: React.FC = () => {
             label="Consumidas"
             unit="KCAL"
           />
+
+          <div className="mt-4 text-center">
+             <span className="text-zinc-500 text-[10px] font-bold bg-zinc-900/40 px-3 py-1 rounded-full border border-zinc-800/40 uppercase tracking-wide">
+               {Number(currentTotals.calories).toFixed(0)} kcal consumidas
+             </span>
+          </div>
 
           <div className="w-full bg-zinc-900/50 backdrop-blur-xl rounded-3xl p-6 shadow-sm border border-zinc-800/80 mt-8 space-y-6">
             <ProgressBar 
@@ -389,9 +410,7 @@ export const Dashboard: React.FC = () => {
         />
       )}
 
-      {showProfile && (
-        <ProfileModal onClose={() => setShowProfile(false)} />
-      )}
+      {showAccountModal && <AccountModal onClose={() => setShowAccountModal(false)} />}
 
       {showNewCategoryModal && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6">

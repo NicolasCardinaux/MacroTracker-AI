@@ -33,7 +33,7 @@ export function calculateNutritionalNeeds(data: CalculatorData): CalculationResu
   
   let bmiCategory: CalculationResult['bmiCategory'] = 'Normal';
   if (bmi < 18.5) bmiCategory = 'Bajo peso';
-  else if (bmi >= 25 && bmi < 29.9) bmiCategory = 'Sobrepeso';
+  else if (bmi >= 25 && bmi < 30) bmiCategory = 'Sobrepeso';
   else if (bmi >= 30) bmiCategory = 'Obesidad';
 
   // 2. Calcular BMR (Mifflin-St Jeor)

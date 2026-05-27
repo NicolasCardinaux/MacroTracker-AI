@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { MobileLayout } from '../components/layout/MobileLayout';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, LineChart, Line } from 'recharts';
-import { ChevronLeft, Calendar } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { ChevronLeft, Calendar, Bot, Sparkles, Maximize2, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { supabase } from '../lib/supabase';
@@ -12,6 +13,9 @@ export const Analytics: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [goals, setGoals] = useState<DailyGoals | null>(null);
   const [weeklyData, setWeeklyData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [aiRecommendation, setAiRecommendation] = useState<string | null>(null);
+  const [loadingAi, setLoadingAi] = useState(false);
+  const [expandedChart, setExpandedChart] = useState<'calories' | 'protein' | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -97,26 +101,77 @@ export const Analytics: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
       <main className="flex-1 overflow-y-auto bg-transparent p-6 space-y-8 pb-28 relative z-10">
         
+        {/* IA CONSULTANT CARD */}
+        <div className="bg-gradient-to-br from-primary-900/40 to-zinc-900/80 backdrop-blur-xl p-6 rounded-3xl shadow-lg border border-primary-500/20 relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-4 opacity-10">
+            <Bot className="w-24 h-24 text-primary-500" />
+          </div>
+          
+          <div className="relative z-10">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="bg-primary-500/20 p-2.5 rounded-2xl">
+                <Sparkles className="w-6 h-6 text-primary-400" />
+              </div>
+              <div>
+                <h3 className="font-bold text-zinc-100 text-lg">Consultor IA</h3>
+                <p className="text-xs text-primary-400 font-medium">Análisis semanal</p>
+              </div>
+            </div>
+
+            {aiRecommendation ? (
+              <div className="bg-zinc-950/50 p-4 rounded-2xl border border-zinc-800/50">
+                <p className="text-sm text-zinc-300 leading-relaxed">{aiRecommendation}</p>
+              </div>
+            ) : (
+              <button
+                onClick={async () => {
+                  setLoadingAi(true);
+                  const result = await api.getWeeklyAnalysis(weeklyData, goals);
+                  setAiRecommendation(result || "Hubo un error al generar tu recomendación. Intenta de nuevo.");
+                  setLoadingAi(false);
+                }}
+                disabled={loadingAi || weeklyData.length === 0}
+                className="w-full mt-2 bg-primary-600 hover:bg-primary-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3.5 px-4 rounded-2xl transition-all shadow-lg shadow-primary-500/20 flex justify-center items-center gap-2"
+              >
+                {loadingAi ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span>Analizando tu semana...</span>
+                  </>
+                ) : (
+                  <span>¿Cómo va mi alimentación?</span>
+                )}
+              </button>
+            )}
+          </div>
+        </div>
+
         <div className="bg-zinc-900/50 backdrop-blur-xl p-6 rounded-3xl shadow-sm border border-zinc-800">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h3 className="font-bold text-zinc-100">Calorías Semanales</h3>
+              <h3 className="font-bold text-zinc-100 flex items-center gap-2">Calorías Semanales <Calendar className="w-4 h-4 text-primary-500" /></h3>
               <p className="text-xs text-zinc-400">Últimos 7 días</p>
             </div>
-            <div className="bg-primary-500/10 p-2 rounded-full">
-              <Calendar className="w-5 h-5 text-primary-500" />
-            </div>
+            <button onClick={() => setExpandedChart('calories')} className="p-2 bg-zinc-800/50 hover:bg-zinc-700/50 rounded-xl text-zinc-400 hover:text-white transition-colors">
+              <Maximize2 className="w-4 h-4" />
+            </button>
           </div>
           
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%" minHeight={250}>
               <BarChart data={weeklyData} margin={{ top: 10, right: 0, left: -25, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorCalories" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.8}/>
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0.2}/>
+                  </linearGradient>
+                </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
                 <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#a1a1aa' }} dy={10} />
                 <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#a1a1aa' }} />
                 <Tooltip cursor={{ fill: '#27272a' }} contentStyle={{ borderRadius: '12px', border: '1px solid #27272a', backgroundColor: '#18181b', color: '#f4f4f5' }} />
                 <ReferenceLine y={goals.target_calories} stroke="#ef4444" strokeDasharray="5 5" />
-                <Bar dataKey="calories" fill="#10b981" radius={[6, 6, 0, 0]} barSize={28} />
+                <Bar dataKey="calories" fill="url(#colorCalories)" radius={[6, 6, 0, 0]} barSize={28} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -128,21 +183,85 @@ export const Analytics: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               <h3 className="font-bold text-zinc-100">Tendencia de Proteínas</h3>
               <p className="text-xs text-zinc-400">Objetivo: {goals.target_protein}g</p>
             </div>
+            <button onClick={() => setExpandedChart('protein')} className="p-2 bg-zinc-800/50 hover:bg-zinc-700/50 rounded-xl text-zinc-400 hover:text-white transition-colors">
+              <Maximize2 className="w-4 h-4" />
+            </button>
           </div>
           
           <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%" minHeight={250}>
-              <LineChart data={weeklyData} margin={{ top: 10, right: 0, left: -25, bottom: 0 }}>
+              <AreaChart data={weeklyData} margin={{ top: 10, right: 0, left: -25, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorProtein" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
                 <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#a1a1aa' }} dy={10} />
                 <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#a1a1aa' }} />
                 <Tooltip contentStyle={{ borderRadius: '12px', border: '1px solid #27272a', backgroundColor: '#18181b', color: '#f4f4f5' }} />
                 <ReferenceLine y={goals.target_protein} stroke="#3b82f6" strokeDasharray="5 5" />
-                <Line type="monotone" dataKey="protein" stroke="#3b82f6" strokeWidth={3} dot={{ r: 4, strokeWidth: 2, fill: '#18181b' }} activeDot={{ r: 6 }} />
-              </LineChart>
+                <Area type="monotone" dataKey="protein" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorProtein)" activeDot={{ r: 6 }} />
+              </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
+
+        {/* Expanded Chart Modal */}
+        {expandedChart && createPortal(
+          <div className="fixed inset-0 z-[9999] flex flex-col bg-zinc-950/95 backdrop-blur-2xl animate-in fade-in duration-300">
+            <div className="flex items-center justify-between p-6 border-b border-zinc-800/50 bg-zinc-950">
+              <div>
+                <h2 className="text-xl font-bold text-white">
+                  {expandedChart === 'calories' ? 'Calorías Semanales' : 'Tendencia de Proteínas'}
+                </h2>
+                <p className="text-sm text-zinc-400">Vista Expandida</p>
+              </div>
+              <button onClick={() => setExpandedChart(null)} className="p-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white rounded-full transition-colors">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="flex-1 w-full p-6 pt-12 flex items-center justify-center">
+              <div className="w-full h-full max-h-[60vh]">
+                <ResponsiveContainer width="100%" height="100%">
+                  {expandedChart === 'calories' ? (
+                    <BarChart data={weeklyData} margin={{ top: 20, right: 10, left: -20, bottom: 20 }}>
+                      <defs>
+                        <linearGradient id="colorCaloriesExp" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.8}/>
+                          <stop offset="95%" stopColor="#10b981" stopOpacity={0.2}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
+                      <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#a1a1aa' }} dy={10} />
+                      <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#a1a1aa' }} />
+                      <Tooltip cursor={{ fill: '#27272a' }} contentStyle={{ borderRadius: '16px', border: '1px solid #27272a', backgroundColor: '#18181b', color: '#f4f4f5', padding: '12px' }} />
+                      <ReferenceLine y={goals.target_calories} stroke="#ef4444" strokeDasharray="5 5" />
+                      <Bar dataKey="calories" fill="url(#colorCaloriesExp)" radius={[6, 6, 0, 0]} maxBarSize={40} />
+                    </BarChart>
+                  ) : (
+                    <AreaChart data={weeklyData} margin={{ top: 20, right: 10, left: -20, bottom: 20 }}>
+                      <defs>
+                        <linearGradient id="colorProteinExp" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/>
+                          <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
+                      <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#a1a1aa' }} dy={10} />
+                      <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#a1a1aa' }} />
+                      <Tooltip contentStyle={{ borderRadius: '16px', border: '1px solid #27272a', backgroundColor: '#18181b', color: '#f4f4f5', padding: '12px' }} />
+                      <ReferenceLine y={goals.target_protein} stroke="#3b82f6" strokeDasharray="5 5" />
+                      <Area type="monotone" dataKey="protein" stroke="#3b82f6" strokeWidth={4} fillOpacity={1} fill="url(#colorProteinExp)" activeDot={{ r: 8 }} />
+                    </AreaChart>
+                  )}
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
 
       </main>
     </MobileLayout>

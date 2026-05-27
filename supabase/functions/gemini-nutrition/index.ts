@@ -6,6 +6,28 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+function extractJsonFromString(str: string): string {
+  let cleaned = str.replace(/^```(?:json)?/im, '').replace(/```$/im, '').trim();
+  const firstBrace = cleaned.indexOf('{');
+  const firstBracket = cleaned.indexOf('[');
+  let startIdx = -1;
+  if (firstBrace !== -1 && firstBracket !== -1) startIdx = Math.min(firstBrace, firstBracket);
+  else if (firstBrace !== -1) startIdx = firstBrace;
+  else if (firstBracket !== -1) startIdx = firstBracket;
+  
+  if (startIdx !== -1) {
+    const endBrace = cleaned.lastIndexOf('}');
+    const endBracket = cleaned.lastIndexOf(']');
+    let endIdx = -1;
+    if (endBrace !== -1 && endBracket !== -1) endIdx = Math.max(endBrace, endBracket);
+    else if (endBrace !== -1) endIdx = endBrace;
+    else if (endBracket !== -1) endIdx = endBracket;
+    
+    if (endIdx !== -1) cleaned = cleaned.substring(startIdx, endIdx + 1);
+  }
+  return cleaned;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -242,33 +264,34 @@ SOLO devuelve el texto plano transcrito. Si el audio está vacío o no se entien
          if (insErr) return new Response(JSON.stringify({ error: insErr }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
-      // --- 3. LOGICA CROWDSOURCING (PROMEDIO) ---
-      // Calculamos el promedio de todos los usuarios para este alimento y lo asignamos al global
-      if (globalTargetId) {
-         const { data: allUserVariations, error: avgErr } = await supabase
-            .from('food_dictionary')
-            .select('base_calories, base_protein, base_carbs, base_fats')
-            .ilike('food_name', exactName)
-            .not('user_id', 'is', null);
 
-         if (avgErr) return new Response(JSON.stringify({ error: avgErr }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-
-         if (allUserVariations && allUserVariations.length > 0) {
-            const count = allUserVariations.length;
-            const avgMacros = {
-               base_calories: Math.round(allUserVariations.reduce((sum: number, f: any) => sum + Number(f.base_calories), 0) / count),
-               base_protein: Math.round(allUserVariations.reduce((sum: number, f: any) => sum + Number(f.base_protein), 0) / count),
-               base_carbs: Math.round(allUserVariations.reduce((sum: number, f: any) => sum + Number(f.base_carbs), 0) / count),
-               base_fats: Math.round(allUserVariations.reduce((sum: number, f: any) => sum + Number(f.base_fats), 0) / count),
-            };
-            
-            // Actualizamos la base global con el promedio de la comunidad!
-            const { error: updGlobalErr } = await supabase.from('food_dictionary').update(avgMacros).eq('id', globalTargetId);
-            if (updGlobalErr) return new Response(JSON.stringify({ error: updGlobalErr }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-         }
-      }
 
       return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // --- MODO: ANÁLISIS SEMANAL (WEEKLY_ANALYSIS) ---
+    if (action === 'weekly_analysis') {
+      const { weeklyData, goals } = requestBody;
+      const weeklyInstruction = `Eres un nutricionista experto y empático.
+El usuario te enviará un resumen de sus últimos 7 días de alimentación (Día, Calorías consumidas, Proteínas consumidas) y sus Metas Diarias.
+Tu tarea es analizar rápidamente cómo le fue en la semana y darle una recomendación breve, amigable y motivadora.
+No hagas una lista enorme. Escribe 1 o 2 párrafos cortos (máximo 4 oraciones en total).
+Ejemplo de estilo: "¡Vienes excelente con la proteína esta semana! Noté que el fin de semana te pasaste un poco de calorías, trata de equilibrar las grasas el domingo. ¡Sigue así que vas muy bien!"`;
+
+      const prompt = `Metas Diarias del Usuario: ${JSON.stringify(goals)}.
+Resumen de los últimos 7 días: ${JSON.stringify(weeklyData)}.
+Analiza esto y dime: ¿Cómo es mi alimentación? ¿Cómo va todo?`;
+
+      const aiResponse = await fetchGemini('gemini-2.5-flash', {
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        systemInstruction: { parts: [{ text: weeklyInstruction }] },
+        generationConfig: { temperature: 0.7 }
+      });
+      const data = await aiResponse.json();
+      if (data.error) throw new Error(data.error.message);
+      const recommendation = data.candidates[0].content.parts[0].text;
+      
+      return new Response(JSON.stringify({ recommendation }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     // --- MODO: ANALIZAR MACROS (HÍBRIDO CACHÉ + IA) ---
@@ -282,13 +305,16 @@ SOLO devuelve el texto plano transcrito. Si el audio está vacío o no se entien
       const t = transcript.trim();
       const weightMatch = t.match(/^([a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+?)\s*(?:de\s*)?(\d+(?:,|\.)?\d*)\s*(gr|gramos|g)$/i);
       const weightMatch2 = t.match(/^(\d+(?:,|\.)?\d*)\s*(gr|gramos|g)\s*(?:de\s*)?([a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+)$/i);
-      const exactWordMatch = t.match(/^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/i);
+      const isSimpleText = /^[a-zA-ZáéíóúÁÉÍÓÚñÑ\s]+$/i.test(t);
+      const wordCount = t.split(/\s+/).length;
+      const hasConnectors = /\b(y|con)\b/i.test(t);
+      const hasNumberWords = /\b(un|una|uno|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|medio|media|mitad|cuarto)\b/i.test(t);
 
-      if (weightMatch) {
+      if (weightMatch && !hasConnectors) {
          extractedItems = [{ name: weightMatch[1].trim(), quantity: Number(weightMatch[2].replace(',','.')), unit: 'gramos', original_text: t }];
-      } else if (weightMatch2) {
+      } else if (weightMatch2 && !hasConnectors) {
          extractedItems = [{ name: weightMatch2[3].trim(), quantity: Number(weightMatch2[1].replace(',','.')), unit: 'gramos', original_text: t }];
-      } else if (exactWordMatch) {
+      } else if (isSimpleText && wordCount <= 3 && !hasConnectors && !hasNumberWords) {
          extractedItems = [{ name: t, quantity: 1, unit: 'unidad', original_text: t }];
       }
     }
@@ -299,8 +325,8 @@ SOLO devuelve el texto plano transcrito. Si el audio está vacío o no se entien
 Eres un asistente que extrae alimentos de un texto.
 Devuelve un JSON estricto con un arreglo "items".
 Cada item debe tener:
-- "name": el nombre singular y genérico del alimento (Ej: "huevo frito", "manzana"). ¡PROHIBIDO INCLUIR NÚMEROS O PESOS EN EL NOMBRE! Si dicen "manzana de 230 gramos", el nombre es SOLO "manzana". Si dicen "fideos con salsa", combina lógicamente en "fideos con salsa".
-- "quantity": cantidad numérica (Ej: 2).
+- "name": el nombre singular y genérico del alimento (Ej: "huevo frito", "manzana"). ¡OBLIGATORIO SEPARAR ALIMENTOS! Si el usuario enumera varios alimentos juntos usando "y" o "con" (ej: "dos huevos con una tostada y media palta"), DEBES devolver elementos separados en el array: uno para "huevo revuelto", otro para "tostada", otro para "palta". ¡NUNCA los combines en un solo nombre largo! ¡PROHIBIDO INCLUIR NÚMEROS O PESOS EN EL NOMBRE!
+- "quantity": cantidad numérica. SIEMPRE usa decimales para fracciones (Ej: si el usuario dice "media palta" o "mitad de manzana", la cantidad es 0.5. Si dice "un cuarto", es 0.25).
 - "unit": unidad de medida ("unidad", "gramos", "taza", etc).
 CRÍTICO: Si el texto menciona un PESO en gramos (ej: "1 manzana de 230 gramos"), LA UNIDAD DEBE SER OBLIGATORIAMENTE "gramos" y LA CANTIDAD debe ser el peso numérico (230). NO uses "unidad" si se especifica el peso.
 - "original_text": el texto original detectado (Ej: "1 manzana de 230 gramos").
@@ -341,7 +367,7 @@ Salida Esperada:
 
         const extractData = await extractResponse.json()
         if (extractData.error) throw new Error(extractData.error.message);
-        extractedItems = JSON.parse(extractData.candidates[0].content.parts[0].text).items || []
+        extractedItems = JSON.parse(extractJsonFromString(extractData.candidates[0].content.parts[0].text)).items || []
       } else {
         const rawJsonText = await executeAiChain(
           extractInstruction,
@@ -352,7 +378,7 @@ Salida Esperada:
             generationConfig: { temperature: 0.1, responseMimeType: "application/json" }
           }
         );
-        extractedItems = JSON.parse(rawJsonText).items || [];
+        extractedItems = JSON.parse(extractJsonFromString(rawJsonText)).items || [];
       }
     }
 
@@ -365,35 +391,35 @@ Salida Esperada:
         .trim();
 
       // Paso 2: Buscar en Supabase Caché
-      let { data: matches, error: rpcError } = await supabase.rpc('match_food_text', {
-        query_text: cleanName,
-        match_threshold: 0.25,
-        match_count: 20
-      })
+      // Primero intentamos búsqueda EXACTA o prefijo (Mucho más preciso que algoritmos fuzzy)
+      let { data: matches } = await supabase
+        .from('food_dictionary')
+        .select('*')
+        .ilike('food_name', cleanName)
+        .limit(20);
+        
+      if (!matches || matches.length === 0) {
+         matches = (await supabase
+            .from('food_dictionary')
+            .select('*')
+            .ilike('food_name', `${cleanName}%`)
+            .limit(20)).data;
+      }
 
-      if (rpcError) console.error("Error en match_food_text:", rpcError)
+      // Si no hay match exacto, recurrimos al algoritmo Fuzzy (Trigramas)
+      if (!matches || matches.length === 0) {
+        const { data: fuzzyMatches, error: rpcError } = await supabase.rpc('match_food_text', {
+          query_text: cleanName,
+          match_threshold: 0.25,
+          match_count: 20
+        });
+        
+        if (rpcError) console.error("Error en match_food_text:", rpcError);
 
-      // Fallback antibalas
-      if (rpcError || !matches || matches.length === 0) {
-        // Primero intentamos búsqueda exacta o que empiece igual (MUCHO más preciso que buscar por 1 palabra)
-        let { data: exactMatches } = await supabase
-          .from('food_dictionary')
-          .select('*')
-          .ilike('food_name', cleanName)
-          .limit(20);
-          
-        if (!exactMatches || exactMatches.length === 0) {
-           exactMatches = (await supabase
-              .from('food_dictionary')
-              .select('*')
-              .ilike('food_name', `${cleanName}%`)
-              .limit(20)).data;
-        }
-
-        if (exactMatches && exactMatches.length > 0) {
-           matches = exactMatches;
+        if (fuzzyMatches && fuzzyMatches.length > 0) {
+           matches = fuzzyMatches;
         } else {
-           // Si falla todo, buscamos por la última palabra
+           // Fallback final: Buscar por la última palabra
            const words = cleanName.split(' ').filter((w: string) => w.length >= 3);
            const keyword = words.length > 0 ? words[words.length - 1] : cleanName;
            
@@ -449,7 +475,8 @@ Salida Esperada:
           total_calories: Number(match.base_calories) * item.quantity,
           total_protein: Number(match.base_protein) * item.quantity,
           total_carbs: Number(match.base_carbs) * item.quantity,
-          total_fats: Number(match.base_fats) * item.quantity
+          total_fats: Number(match.base_fats) * item.quantity,
+          fuente_calculo: 'diccionario_local'
         })
       } else {
         // MISS EN CACHÉ -> Preguntar a Gemini por este alimento específico
@@ -464,10 +491,10 @@ CRÍTICO: Si el texto provisto NO es un alimento real consumible por humanos (po
 
 Si es un alimento válido, devuelve un JSON con:
 - "name": Nombre limpio y capitalizado (Ej: "Huevo Frito").
-- "base_calories", "base_protein", "base_carbs", "base_fats": valores numéricos exactos para 1 unidad base.
+- "base_calories", "base_protein", "base_carbs", "base_fats": valores numéricos exactos solicitados.
 - "default_unit": la unidad utilizada ("unidad" o "gramos").
 `
-        const unitContext = normalizedUnit === 'gramos' ? 'Calcula los macros para exactamente 1 gramo de este alimento.' : 'Calcula los macros para exactamente 1 unidad de este alimento.'
+        const unitContext = normalizedUnit === 'gramos' ? 'Calcula los macros para exactamente 100 gramos de este alimento.' : 'Calcula los macros para exactamente 1 unidad de este alimento.'
 
         const userPromptMacro = `Alimento: ${item.name}. ${unitContext}`;
         const rawMacroJson = await executeAiChain(
@@ -480,29 +507,60 @@ Si es un alimento válido, devuelve un JSON con:
           }
         );
         
-        const parsedMacro = JSON.parse(rawMacroJson);
+        const parsedMacro = JSON.parse(extractJsonFromString(rawMacroJson));
+        
+        if (normalizedUnit === 'gramos') {
+           // La IA siempre calcula sobre 100g para mayor precisión. Aquí lo dividimos para obtener el valor de 1 gramo.
+           parsedMacro.base_calories = Number((parsedMacro.base_calories / 100).toFixed(4));
+           parsedMacro.base_protein = Number((parsedMacro.base_protein / 100).toFixed(4));
+           parsedMacro.base_carbs = Number((parsedMacro.base_carbs / 100).toFixed(4));
+           parsedMacro.base_fats = Number((parsedMacro.base_fats / 100).toFixed(4));
+        }
         
         if (parsedMacro.name === "NOT_A_FOOD") {
           throw new Error(`La palabra "${item.name}" no fue reconocida como un alimento válido.`);
         }
 
-        // Guardar en Caché para la próxima vez (como Global AI)
-        const { error: insertError } = await supabase.from('food_dictionary').insert({
-          food_name: parsedMacro.name,
-          base_calories: parsedMacro.base_calories,
-          base_protein: parsedMacro.base_protein,
-          base_carbs: parsedMacro.base_carbs,
-          base_fats: parsedMacro.base_fats,
-          default_unit: parsedMacro.default_unit,
-          usage_count: 1,
-          user_id: null,
-          source: 'AI'
-        })
-        
-        if (insertError) {
-          console.error("CRITICAL ERROR: No se pudo guardar el alimento en caché (Supabase Insert Falló):", insertError);
+        const normalizedParsedName = parsedMacro.name.toLowerCase().trim();
+        const { data: existingGlobal } = await supabase.from('food_dictionary')
+          .select('id, usage_count, base_calories, base_protein, base_carbs, base_fats')
+          .ilike('food_name', normalizedParsedName)
+          .is('user_id', null)
+          .limit(1)
+          .maybeSingle();
+
+        let finalMacros = parsedMacro;
+
+        if (existingGlobal) {
+          console.log(`[Deduplicación] Evitando duplicado global para "${parsedMacro.name}". Reutilizando ID: ${existingGlobal.id}`);
+          finalMacros = {
+             ...parsedMacro,
+             base_calories: Number(existingGlobal.base_calories),
+             base_protein: Number(existingGlobal.base_protein),
+             base_carbs: Number(existingGlobal.base_carbs),
+             base_fats: Number(existingGlobal.base_fats)
+          };
+          // Update usage count asynchronously
+          supabase.from('food_dictionary').update({ usage_count: (existingGlobal.usage_count || 0) + 1 }).eq('id', existingGlobal.id).then();
         } else {
-          console.log("¡Alimento nuevo aprendido y guardado con éxito en Supabase!", parsedMacro.name);
+          // Guardar en Caché para la próxima vez (como Global AI)
+          const { error: insertError } = await supabase.from('food_dictionary').insert({
+            food_name: parsedMacro.name,
+            base_calories: parsedMacro.base_calories,
+            base_protein: parsedMacro.base_protein,
+            base_carbs: parsedMacro.base_carbs,
+            base_fats: parsedMacro.base_fats,
+            default_unit: parsedMacro.default_unit,
+            usage_count: 1,
+            user_id: null,
+            source: 'AI'
+          })
+          
+          if (insertError) {
+            console.error("CRITICAL ERROR: No se pudo guardar el alimento en caché (Supabase Insert Falló):", insertError);
+          } else {
+            console.log("¡Alimento nuevo aprendido y guardado con éxito en Supabase!", parsedMacro.name);
+          }
         }
 
         finalFoods.push({
@@ -510,14 +568,15 @@ Si es un alimento válido, devuelve un JSON con:
           amount: item.original_text,
           quantity: item.quantity,
           unit: normalizedUnit,
-          base_calories: parsedMacro.base_calories,
-          base_protein: parsedMacro.base_protein,
-          base_carbs: parsedMacro.base_carbs,
-          base_fats: parsedMacro.base_fats,
-          total_calories: parsedMacro.base_calories * item.quantity,
-          total_protein: parsedMacro.base_protein * item.quantity,
-          total_carbs: parsedMacro.base_carbs * item.quantity,
-          total_fats: parsedMacro.base_fats * item.quantity
+          base_calories: finalMacros.base_calories,
+          base_protein: finalMacros.base_protein,
+          base_carbs: finalMacros.base_carbs,
+          base_fats: finalMacros.base_fats,
+          total_calories: finalMacros.base_calories * item.quantity,
+          total_protein: finalMacros.base_protein * item.quantity,
+          total_carbs: finalMacros.base_carbs * item.quantity,
+          total_fats: finalMacros.base_fats * item.quantity,
+          fuente_calculo: existingGlobal ? 'diccionario_local' : 'gemini'
         })
       }
     }

@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import type { DailyGoals, FoodLog, GeminiNutritionResponse, BodyMetric } from '../types';
+import { getLocalDateString } from '../utils/date';
 
 export const api = {
   // --- METAS DIARIAS ---
@@ -52,7 +53,7 @@ export const api = {
 
   // --- REGISTROS DE COMIDA ---
   async getTodayFoodLogs(userId: string): Promise<FoodLog[]> {
-    const today = new Date().toISOString().split('T')[0]; // Formato YYYY-MM-DD
+    const today = getLocalDateString();
     return this.getFoodLogsByDate(userId, today);
   },
 
@@ -194,6 +195,22 @@ export const api = {
       }
     } catch (e) {
       console.error('Error updating dictionary from edit:', e);
+    }
+  },
+
+  async getWeeklyAnalysis(weeklyData: any[], goals: any): Promise<string | null> {
+    try {
+      const { data, error } = await supabase.functions.invoke('gemini-nutrition', {
+        body: { action: 'weekly_analysis', weeklyData, goals }
+      });
+      if (error) {
+        console.error('Edge function error (weekly_analysis):', error);
+        return null;
+      }
+      return data.recommendation;
+    } catch (e) {
+      console.error('Error fetching weekly analysis:', e);
+      return null;
     }
   },
 

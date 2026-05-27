@@ -27,6 +27,7 @@ export interface FoodLog {
   base_protein: number;
   base_carbs: number;
   base_fats: number;
+  fuente_calculo?: 'gemini' | 'diccionario_local';
   created_at: string;
 }
 
@@ -43,6 +44,7 @@ export interface GeminiFoodItem {
   total_protein: number;
   total_carbs: number;
   total_fats: number;
+  fuente_calculo?: 'gemini' | 'diccionario_local';
 }
 
 export interface GeminiNutritionResponse {

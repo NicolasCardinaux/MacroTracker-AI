@@ -1,5 +1,5 @@
 import React from 'react';
-import { Edit2, Trash2 } from 'lucide-react';
+import { Edit2, Trash2, Check } from 'lucide-react';
 import type { FoodLog } from '../../types';
 
 interface FoodCardProps {
@@ -9,41 +9,31 @@ interface FoodCardProps {
 }
 
 export const FoodCard: React.FC<FoodCardProps> = ({ log, onEdit, onDelete }) => {
-  const getPortions = (log: FoodLog) => {
-    if (log.raw_input.toLowerCase().includes('gr') || log.raw_input.toLowerCase().includes('gramos')) {
-       const match = log.raw_input.match(/\((.*?)\)/);
-       if (match) {
-          return match[1].split('+').length;
-       }
-       return 1;
-    }
-    return log.quantity;
-  }
-  
-  const portions = getPortions(log);
+  const isGrams = log.raw_input.toLowerCase().includes('gr') || log.raw_input.toLowerCase().includes('gramo');
+  const portions = log.quantity;
 
-  const getFormattedName = (log: FoodLog, portions: number) => {
+  const getFormattedName = (log: FoodLog, portions: number, isGrams: boolean) => {
      let raw = log.raw_input;
      
      if (raw.startsWith('[CUSTOM:')) {
         raw = raw.substring(raw.indexOf(']') + 1).trim();
      }
 
-     // Remove leading numbers and units that might have been cached in the DB (e.g. "1 Huevo", "150 gr de Arroz")
+     // Remove leading numbers and units that might have been cached in the DB
      raw = raw.replace(/^(\d+(?:\.\d+)?\s*(?:unidades|unidad|gramos|gramo|gr|g|ml)?\s*(?:de\s*)?)/i, '').trim();
      
      raw = raw.charAt(0).toUpperCase() + raw.slice(1);
      
-     if (portions <= 1) return raw;
+     const suffix = isGrams ? `(${portions}gr)` : `(x${portions})`;
 
      if (raw.includes('(')) {
         const parts = raw.split(' (');
         const baseName = parts[0];
         const rest = parts.slice(1).join(' (');
-        return `${baseName} (x${portions}) (${rest}`;
+        return `${baseName} ${suffix} (${rest}`;
      }
      
-     return `${raw} (x${portions})`;
+     return `${raw} ${suffix}`;
   }
 
   return (
@@ -53,8 +43,13 @@ export const FoodCard: React.FC<FoodCardProps> = ({ log, onEdit, onDelete }) => 
       
       <div className="flex justify-between items-start">
         <div className="pr-4">
-          <p className="text-sm font-semibold text-zinc-100 leading-tight">
-            {getFormattedName(log, portions)}
+          <p className="text-sm font-semibold text-zinc-100 leading-tight flex items-center gap-1.5 flex-wrap">
+            {getFormattedName(log, portions, isGrams)}
+            {log.fuente_calculo === 'diccionario_local' && (
+              <span title="Aprendido de tu diccionario" className="flex items-center justify-center w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400">
+                <Check className="w-2.5 h-2.5 font-bold" />
+              </span>
+            )}
           </p>
         </div>
         <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20 whitespace-nowrap">

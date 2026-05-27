@@ -138,12 +138,11 @@ export const ProgressRing: React.FC<ProgressRingProps> = ({
         )}
       </svg>
       <div className="absolute flex flex-col items-center justify-center text-center z-10">
-        <span className="text-zinc-400 text-sm font-medium mb-1">{label}</span>
+        <span className="text-zinc-400 text-sm font-medium mb-1">{isOver ? 'Te Pasaste' : 'Faltan'}</span>
         <div className="flex items-baseline space-x-1">
           <span className={`text-4xl font-bold tracking-tighter ${isOver ? 'text-red-500' : 'text-zinc-100'}`}>
-            {Number(totalCurrent).toFixed(1)}
+            {Math.abs(max - totalCurrent).toFixed(0)}
           </span>
-          <span className="text-zinc-500 text-lg font-medium">/ {max}</span>
         </div>
         <span className="text-zinc-500 text-xs mt-1 font-semibold tracking-wider uppercase">{unit}</span>
       </div>
