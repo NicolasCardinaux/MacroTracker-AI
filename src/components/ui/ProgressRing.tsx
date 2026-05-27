@@ -18,7 +18,6 @@ interface ProgressRingProps {
 export const ProgressRing: React.FC<ProgressRingProps> = ({
   segments,
   max,
-  label,
   unit,
   size = 220,
   strokeWidth = 16,

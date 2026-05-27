@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { getLocalDateString } from '../utils/date';
 import { createPortal } from 'react-dom';
 import { MobileLayout } from '../components/layout/MobileLayout';

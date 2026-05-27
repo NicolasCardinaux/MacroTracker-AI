@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { MobileLayout } from '../components/layout/MobileLayout';
 import { createPortal } from 'react-dom';
 import { ChevronLeft, Plus, Scale, TrendingDown, Target, Maximize2, X } from 'lucide-react';
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { getLocalDateString } from '../utils/date';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
