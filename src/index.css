@@ -8,6 +8,14 @@
   --color-primary-700: #047857;
 
   --font-family-sans: 'Inter', system-ui, sans-serif;
+
+  --animate-scan: scan 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  @keyframes scan {
+    0%, 100% { transform: translateY(-100px); opacity: 0; }
+    10% { opacity: 1; }
+    50% { transform: translateY(100px); }
+    90% { opacity: 1; }
+  }
 }
 
 @layer base {

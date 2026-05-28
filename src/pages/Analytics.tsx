@@ -2,11 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { MobileLayout } from '../components/layout/MobileLayout';
 import { createPortal } from 'react-dom';
 import { BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { ChevronLeft, Calendar, Bot, Sparkles, Maximize2, X } from 'lucide-react';
+import { ChevronLeft, Calendar, Bot, Sparkles, Maximize2, X, Save, History, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { supabase } from '../lib/supabase';
-import type { DailyGoals } from '../types';
+import type { DailyGoals, AIConsultation } from '../types';
 
 export const Analytics: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const { user } = useAuth();
@@ -17,11 +17,63 @@ export const Analytics: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [loadingAi, setLoadingAi] = useState(false);
   const [expandedChart, setExpandedChart] = useState<'calories' | 'protein' | null>(null);
 
+  const [aiHistory, setAiHistory] = useState<AIConsultation[]>([]);
+  const [isAiMinimized, setIsAiMinimized] = useState(false);
+  const [isSavingAi, setIsSavingAi] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+
+  const getAnalysisCount = () => {
+    try {
+      const datesStr = localStorage.getItem('analysis_dates');
+      let dates: number[] = datesStr ? JSON.parse(datesStr) : [];
+      const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      dates = dates.filter(d => d > oneWeekAgo);
+      localStorage.setItem('analysis_dates', JSON.stringify(dates));
+      return dates.length;
+    } catch {
+      return 0;
+    }
+  };
+
+  const addAnalysisDate = () => {
+    try {
+      const datesStr = localStorage.getItem('analysis_dates');
+      let dates: number[] = datesStr ? JSON.parse(datesStr) : [];
+      dates.push(Date.now());
+      localStorage.setItem('analysis_dates', JSON.stringify(dates));
+      setAnalysisCount(dates.length);
+    } catch {}
+  };
+
+  const [analysisCount, setAnalysisCount] = useState(getAnalysisCount());
+  // Removed limit for testing
+  const maxAnalysisPerWeek = 999;
+
   useEffect(() => {
     if (user) {
       loadAnalytics();
+      loadAiHistory();
     }
   }, [user]);
+
+  const loadAiHistory = async () => {
+    if (!user) return;
+    const history = await api.getAiConsultations(user.id);
+    setAiHistory(history);
+  };
+
+  const handleSaveConsultation = async () => {
+    if (!user || !aiRecommendation) return;
+    setIsSavingAi(true);
+    const success = await api.saveAiConsultation(user.id, aiRecommendation);
+    if (success) {
+      await loadAiHistory();
+      setAiRecommendation(null);
+      setIsAiMinimized(false);
+      setShowHistory(true);
+    }
+    setIsSavingAi(false);
+  };
 
   const loadAnalytics = async () => {
     if (!user) return;
@@ -108,40 +160,107 @@ export const Analytics: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           </div>
           
           <div className="relative z-10">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="bg-primary-500/20 p-2.5 rounded-2xl">
-                <Sparkles className="w-6 h-6 text-primary-400" />
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="bg-primary-500/20 p-2.5 rounded-2xl">
+                  <Sparkles className="w-6 h-6 text-primary-400" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-zinc-100 text-lg">Consultor IA</h3>
+                  <p className="text-xs text-primary-400 font-medium">Análisis semanal</p>
+                </div>
               </div>
-              <div>
-                <h3 className="font-bold text-zinc-100 text-lg">Consultor IA</h3>
-                <p className="text-xs text-primary-400 font-medium">Análisis semanal</p>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => setShowHistory(!showHistory)}
+                  className={`p-2 rounded-xl transition-colors ${showHistory ? 'bg-primary-500/20 text-primary-400' : 'bg-zinc-800/50 text-zinc-400 hover:text-zinc-200'}`}
+                  title="Historial de consultas"
+                >
+                  <History className="w-5 h-5" />
+                </button>
               </div>
             </div>
 
             {aiRecommendation ? (
-              <div className="bg-zinc-950/50 p-4 rounded-2xl border border-zinc-800/50">
-                <p className="text-sm text-zinc-300 leading-relaxed">{aiRecommendation}</p>
+              <div className="space-y-3">
+                <div className="bg-zinc-950/50 p-4 rounded-2xl border border-zinc-800/50">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Tu análisis actual</span>
+                    <button onClick={() => setIsAiMinimized(!isAiMinimized)} className="text-zinc-400 hover:text-zinc-200 p-1">
+                      {isAiMinimized ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  {!isAiMinimized && (
+                    <p className="text-sm text-zinc-300 leading-relaxed mt-2">{aiRecommendation}</p>
+                  )}
+                </div>
+                {!isAiMinimized && (
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => setAiRecommendation(null)}
+                      className="flex-1 py-3 px-4 bg-zinc-800/50 hover:bg-zinc-800 text-zinc-300 text-sm font-bold rounded-xl transition-colors"
+                    >
+                      Cerrar consulta
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <button
                 onClick={async () => {
+                  if (analysisCount >= maxAnalysisPerWeek) return;
                   setLoadingAi(true);
+                  setIsAiMinimized(false);
                   const result = await api.getWeeklyAnalysis(weeklyData, goals);
                   setAiRecommendation(result || "Hubo un error al generar tu recomendación. Intenta de nuevo.");
+                  if (result) {
+                    addAnalysisDate();
+                    if (user?.id) {
+                      await api.saveAiConsultation(user.id, result);
+                      await loadAiHistory();
+                    }
+                  }
                   setLoadingAi(false);
                 }}
-                disabled={loadingAi || weeklyData.length === 0}
-                className="w-full mt-2 bg-primary-600 hover:bg-primary-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3.5 px-4 rounded-2xl transition-all shadow-lg shadow-primary-500/20 flex justify-center items-center gap-2"
+                disabled={loadingAi || weeklyData.length === 0 || analysisCount >= maxAnalysisPerWeek}
+                className="w-full mt-2 bg-primary-600 hover:bg-primary-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3.5 px-4 rounded-2xl transition-all shadow-lg shadow-primary-500/20 flex flex-col justify-center items-center gap-1"
               >
-                {loadingAi ? (
-                  <>
-                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    <span>Analizando tu semana...</span>
-                  </>
+                <div className="flex items-center gap-2">
+                  {loadingAi && <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+                  <span>{loadingAi ? 'Analizando tu semana...' : '¿Cómo va mi alimentación?'}</span>
+                </div>
+                {analysisCount >= maxAnalysisPerWeek ? (
+                  <span className="text-[10px] text-white/70 font-normal">Límite semanal alcanzado ({maxAnalysisPerWeek}/{maxAnalysisPerWeek})</span>
                 ) : (
-                  <span>¿Cómo va mi alimentación?</span>
+                  <span className="text-[10px] text-white/70 font-normal">Quedan {maxAnalysisPerWeek - analysisCount} análisis esta semana</span>
                 )}
               </button>
+            )}
+
+            {showHistory && (
+              <div className="mt-6 pt-6 border-t border-zinc-800/50">
+                <h4 className="text-sm font-bold text-zinc-100 mb-4 flex items-center gap-2">
+                  <History className="w-4 h-4 text-zinc-400" /> Historial de consultas
+                </h4>
+                {aiHistory.length === 0 ? (
+                  <p className="text-sm text-zinc-500 text-center py-4 bg-zinc-950/30 rounded-xl border border-dashed border-zinc-800/50">
+                    No tenés consultas guardadas aún.
+                  </p>
+                ) : (
+                  <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                    {aiHistory.map((item) => (
+                      <div key={item.id} className="bg-zinc-950/40 p-4 rounded-xl border border-zinc-800/40 hover:border-zinc-700/50 transition-colors group">
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="text-xs font-bold text-zinc-500">
+                            {new Date(item.created_at).toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        <p className="text-sm text-zinc-300 leading-relaxed">{item.consultation_text}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>

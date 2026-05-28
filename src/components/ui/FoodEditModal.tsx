@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Save, Minus, Plus } from 'lucide-react';
+import { X, Save, Minus, Plus, RefreshCcw, Loader2 } from 'lucide-react';
 import type { FoodLog, MealType } from '../../types';
+import { api } from '../../services/api';
 
 interface FoodEditModalProps {
   log: FoodLog;
@@ -10,7 +11,8 @@ interface FoodEditModalProps {
 }
 
 export const FoodEditModal: React.FC<FoodEditModalProps> = ({ log, onClose, onSave }) => {
-  const [rawInput, setRawInput] = useState(log.raw_input);
+  const initialRawInput = log.raw_input.replace(/^(\[CUSTOM:[^\]]+\]\s*)?(\d+(?:\.\d+)?\s*(?:unidades|unidad|gramos|gramo|gr|g|ml)?\s*(?:de\s*)?)/i, '$1').trim();
+  const [rawInput, setRawInput] = useState(initialRawInput);
   const [mealType, setMealType] = useState<MealType>(log.meal_type);
   
   // Estados base (para que puedan ser recalculados si el usuario edita el total)
@@ -44,6 +46,31 @@ export const FoodEditModal: React.FC<FoodEditModalProps> = ({ log, onClose, onSa
   const handleEditProtein = (val: number) => { setProtein(val); setBaseProtein(val / (quantity || 1)); };
   const handleEditCarbs = (val: number) => { setCarbs(val); setBaseCarbs(val / (quantity || 1)); };
   const handleEditFats = (val: number) => { setFats(val); setBaseFats(val / (quantity || 1)); };
+
+  const [isRestoring, setIsRestoring] = useState(false);
+
+  const handleRestoreOriginal = async () => {
+    if (!log.raw_input) return;
+    setIsRestoring(true);
+    const original = await api.getOriginalMacros(log.raw_input);
+    if (original) {
+      await onSave(log.id, {
+        raw_input: rawInput,
+        meal_type: mealType,
+        quantity,
+        base_calories: original.base_calories,
+        base_protein: original.base_protein,
+        base_carbs: original.base_carbs,
+        base_fats: original.base_fats,
+        calories: Math.round(original.base_calories * quantity),
+        protein: Math.round(original.base_protein * quantity * 10) / 10,
+        carbs: Math.round(original.base_carbs * quantity * 10) / 10,
+        fats: Math.round(original.base_fats * quantity * 10) / 10
+      });
+      onClose();
+    }
+    setIsRestoring(false);
+  };
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -178,10 +205,21 @@ export const FoodEditModal: React.FC<FoodEditModalProps> = ({ log, onClose, onSa
             </div>
           </div>
 
+          {!log.is_verified && (
+            <button
+              onClick={handleRestoreOriginal}
+              disabled={isRestoring || isSaving}
+              className="mt-6 w-full py-3 bg-zinc-800/50 hover:bg-zinc-800 border border-zinc-700/50 text-zinc-300 rounded-2xl font-bold transition-colors flex items-center justify-center gap-2 disabled:opacity-50 text-sm"
+            >
+              {isRestoring ? <Loader2 className="w-4 h-4 animate-spin text-zinc-400" /> : <RefreshCcw className="w-4 h-4 text-zinc-400" />}
+              Volver al alimento original
+            </button>
+          )}
+
           <button 
             onClick={handleSave}
             disabled={isSaving}
-            className="mt-6 w-full py-4 bg-primary-600 text-white rounded-2xl font-bold hover:bg-primary-500 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
+            className={`w-full py-4 bg-primary-600 text-white rounded-2xl font-bold hover:bg-primary-500 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 ${!log.is_verified ? 'mt-3' : 'mt-6'}`}
           >
             {isSaving ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Save className="w-5 h-5" />}
             Guardar Cambios

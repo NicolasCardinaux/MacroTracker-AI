@@ -28,6 +28,7 @@ export interface FoodLog {
   base_carbs: number;
   base_fats: number;
   fuente_calculo?: 'gemini' | 'diccionario_local';
+  is_verified?: boolean;
   created_at: string;
 }
 
@@ -45,6 +46,7 @@ export interface GeminiFoodItem {
   total_carbs: number;
   total_fats: number;
   fuente_calculo?: 'gemini' | 'diccionario_local';
+  is_verified?: boolean;
 }
 
 export interface GeminiNutritionResponse {
@@ -57,5 +59,34 @@ export interface BodyMetric {
   date: string;
   weight: number;
   body_fat?: number;
+  created_at: string;
+}
+
+export interface SavedMealItem {
+  raw_input: string;
+  calories: number;
+  protein: number;
+  carbs: number;
+  fats: number;
+  quantity: number;
+  base_calories: number;
+  base_protein: number;
+  base_carbs: number;
+  base_fats: number;
+  is_verified?: boolean;
+}
+
+export interface SavedMeal {
+  id: string;
+  user_id: string;
+  combo_name: string;
+  items: SavedMealItem[];
+  created_at: string;
+}
+
+export interface AIConsultation {
+  id: number;
+  user_id: string;
+  consultation_text: string;
   created_at: string;
 }

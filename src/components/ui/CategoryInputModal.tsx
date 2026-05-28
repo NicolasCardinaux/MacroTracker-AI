@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Mic, Send, X, Square } from 'lucide-react';
+import { Mic, Send, X, Square, ScanLine } from 'lucide-react';
 import type { GeminiNutritionResponse, MealType } from '../../types';
 
 interface CategoryInputModalProps {
@@ -15,6 +15,7 @@ interface CategoryInputModalProps {
   onCancel: () => void;
   onProcessText: (text: string) => void;
   onTextChange: (text: string) => void;
+  onOpenScanner: () => void;
 }
 
 export const CategoryInputModal: React.FC<CategoryInputModalProps> = ({
@@ -28,7 +29,8 @@ export const CategoryInputModal: React.FC<CategoryInputModalProps> = ({
   onStopVoice,
   onCancel,
   onProcessText,
-  onTextChange
+  onTextChange,
+  onOpenScanner
 }) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -58,7 +60,7 @@ export const CategoryInputModal: React.FC<CategoryInputModalProps> = ({
             <h3 className="text-xl font-bold text-zinc-100 flex items-center gap-2">
               Añadir a {category}
             </h3>
-            <p className="text-sm text-zinc-500 mt-1">Dicta o escribe tus alimentos</p>
+            <p className="text-sm text-zinc-500 mt-1">Dicta, escribe o escanea tus alimentos</p>
           </div>
           {!isProcessing && (
             <button onClick={onCancel} className="p-2 bg-zinc-900 rounded-full text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors">
@@ -80,13 +82,13 @@ export const CategoryInputModal: React.FC<CategoryInputModalProps> = ({
               <textarea
                 ref={textareaRef}
                 className={`w-full bg-zinc-900 border ${isListening ? 'border-primary-500/50 shadow-[0_0_15px_rgba(16,185,129,0.1)]' : 'border-zinc-800'} text-zinc-100 rounded-2xl p-4 min-h-[160px] focus:ring-1 focus:ring-primary-500 focus:border-primary-500 resize-none placeholder-zinc-600 transition-all text-lg`}
-                placeholder="Ej: Dos huevos revueltos con una tostada y media palta..."
+                placeholder="Ej: Dos huevos revueltos con una tostada..."
                 value={transcript}
                 onChange={(e) => onTextChange(e.target.value)}
               />
               
-              {/* Mic Button Floating inside textarea */}
-              <div className="absolute bottom-4 right-4 flex items-center gap-3">
+              {/* Buttons Floating inside textarea */}
+              <div className="absolute bottom-4 right-4 flex items-center gap-2">
                 {isListening && (
                   <div className="flex items-center gap-1 h-6 mr-2">
                     <div className="w-1 bg-primary-500 rounded-full animate-[soundwave_1s_ease-in-out_infinite] h-2"></div>
@@ -95,6 +97,15 @@ export const CategoryInputModal: React.FC<CategoryInputModalProps> = ({
                     <div className="w-1 bg-primary-500 rounded-full animate-[soundwave_1s_ease-in-out_infinite_0.6s] h-3"></div>
                   </div>
                 )}
+                
+                <button 
+                  onClick={onOpenScanner}
+                  className="w-10 h-10 rounded-full flex items-center justify-center transition-all bg-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-700"
+                  title="Escanear código de barras"
+                >
+                  <ScanLine className="w-4 h-4" />
+                </button>
+
                 <button 
                   onClick={isListening ? onStopVoice : onStartVoice}
                   className={`w-12 h-12 rounded-full flex items-center justify-center transition-all shadow-lg ${
@@ -134,7 +145,7 @@ export const CategoryInputModal: React.FC<CategoryInputModalProps> = ({
               <div className="w-16 h-16 border-4 border-primary-500 border-t-transparent rounded-full animate-spin absolute top-0 left-0"></div>
             </div>
             <h3 className="text-xl font-bold text-zinc-100">Analizando...</h3>
-            <p className="text-sm text-zinc-400 mt-2 text-center max-w-[250px]">Gemini está calculando calorías y macronutrientes exactos.</p>
+            <p className="text-sm text-zinc-400 mt-2 text-center max-w-[250px]">MacroTracker AI está calculando calorías y macronutrientes exactos.</p>
           </div>
         )}
         </div>

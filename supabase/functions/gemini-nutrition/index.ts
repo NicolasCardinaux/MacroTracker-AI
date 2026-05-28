@@ -188,20 +188,31 @@ SOLO devuelve el texto plano transcrito. Si el audio está vacío o no se entien
       let globalTargetId = null;
       let exactName = cleanName;
       let existingUnit = 'unidad'; // default fallback
+      const lowerFoodName = food_name.toLowerCase();
+      if (lowerFoodName.includes('gramo') || lowerFoodName.includes('gr ') || lowerFoodName.match(/\bgr\b/)) {
+         existingUnit = 'gramos';
+      } else if (lowerFoodName.includes('ml')) {
+         existingUnit = 'ml';
+      }
 
       // 1. Búsqueda exacta
       const { data } = await supabase.from('food_dictionary').select('id, user_id, food_name, default_unit').ilike('food_name', cleanName);
       if (data && data.length > 0) {
         const userCopy = data.find((r: any) => r.user_id === user_id);
-        const globalCopy = data.find((r: any) => r.user_id === null);
+        const globalCopy = data.find((r: any) => r.user_id === null && r.default_unit === existingUnit);
+        const anyGlobalCopy = data.find((r: any) => r.user_id === null);
+        
         if (userCopy) {
             userTargetId = userCopy.id;
-            existingUnit = userCopy.default_unit;
         }
-        if (globalCopy) {
-            globalTargetId = globalCopy.id;
-            exactName = globalCopy.food_name; // Respetar capitalización de DB
-            if (!userCopy) existingUnit = globalCopy.default_unit;
+        if (globalCopy || anyGlobalCopy) {
+            const copyToUse = globalCopy || anyGlobalCopy;
+            globalTargetId = copyToUse.id;
+            exactName = copyToUse.food_name; // Respetar capitalización de DB
+            // Solo usamos la de la DB si no logramos extraerla del input
+            if (!userCopy && !lowerFoodName.includes('gramo') && !lowerFoodName.includes('ml') && !lowerFoodName.includes('unidad')) {
+               existingUnit = copyToUse.default_unit;
+            }
         }
       } else {
         // 2. Búsqueda fuzzy fallback
@@ -213,15 +224,19 @@ SOLO devuelve el texto plano transcrito. Si el audio está vacío o no se entien
           const { data: fallbackData } = await supabase.from('food_dictionary').select('id, user_id, food_name, default_unit').ilike('food_name', `%${searchWord}%`);
           if (fallbackData && fallbackData.length > 0) {
             const userCopy = fallbackData.find((r: any) => r.user_id === user_id);
-            const globalCopy = fallbackData.find((r: any) => r.user_id === null);
+            const globalCopy = fallbackData.find((r: any) => r.user_id === null && r.default_unit === existingUnit);
+            const anyGlobalCopy = fallbackData.find((r: any) => r.user_id === null);
+            
             if (userCopy) {
                 userTargetId = userCopy.id;
-                existingUnit = userCopy.default_unit;
             }
-            if (globalCopy) {
-                globalTargetId = globalCopy.id;
-                exactName = globalCopy.food_name;
-                if (!userCopy) existingUnit = globalCopy.default_unit;
+            if (globalCopy || anyGlobalCopy) {
+                const copyToUse = globalCopy || anyGlobalCopy;
+                globalTargetId = copyToUse.id;
+                exactName = copyToUse.food_name;
+                if (!userCopy && !lowerFoodName.includes('gramo') && !lowerFoodName.includes('ml') && !lowerFoodName.includes('unidad')) {
+                   existingUnit = copyToUse.default_unit;
+                }
             }
             break; // Stop looking after first successful fuzzy match
           }
@@ -263,10 +278,12 @@ SOLO devuelve el texto plano transcrito. Si el audio está vacío o no se entien
          });
          if (insErr) return new Response(JSON.stringify({ error: insErr }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
+      return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
 
-
-
-      return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    if (action === 'test_db') {
+       const { data, error } = await supabase.from('food_dictionary').delete().not('user_id', 'is', null);
+       return new Response(JSON.stringify({ data, error }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     // --- MODO: ANÁLISIS SEMANAL (WEEKLY_ANALYSIS) ---
@@ -292,6 +309,54 @@ Analiza esto y dime: ¿Cómo es mi alimentación? ¿Cómo va todo?`;
       const recommendation = data.candidates[0].content.parts[0].text;
       
       return new Response(JSON.stringify({ recommendation }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    if (action === 'analyze_nutrition_label') {
+      const { image, barcode } = requestBody;
+      // image is expected to be a base64 encoded string
+
+      const visionInstruction = `Eres un asistente experto en nutrición. Se te proporciona una foto de una tabla nutricional.
+Tu tarea es extraer estrictamente los siguientes macros POR PORCIÓN:
+- Calorías (kcal)
+- Proteínas (g)
+- Carbohidratos totales (g)
+- Grasas totales (g)
+
+Si la tabla muestra valores "por porción" y "por 100g", extrae siempre los valores "por 100g" O "por 100ml". Si solo muestra por porción, extrae esos.
+Devuelve ÚNICAMENTE un objeto JSON válido con las claves: "base_calories", "base_protein", "base_carbs", "base_fats", "unit".
+Asegúrate de que los valores sean números enteros o decimales. La clave "unit" debe ser "gramos" o "mililitros" dependiendo del alimento (por defecto "gramos").
+Ejemplo de salida:
+{"base_calories": 250, "base_protein": 12.5, "base_carbs": 30, "base_fats": 5, "unit": "gramos"}
+No agregues texto extra ni explicaciones, solo el JSON.`;
+
+      const geminiPayload = {
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { text: "Extrae los macros de esta etiqueta." },
+              {
+                inline_data: {
+                  mime_type: "image/jpeg", // Asumimos jpeg, si la app manda otra cosa deberíamos parametrizarlo, pero gemini es flexible
+                  data: image
+                }
+              }
+            ]
+          }
+        ],
+        systemInstruction: { parts: [{ text: visionInstruction }] },
+        generationConfig: { temperature: 0.1 }
+      };
+
+      const aiResponse = await fetchGemini('gemini-2.5-flash', geminiPayload);
+      const data = await aiResponse.json();
+      if (data.error) throw new Error(data.error.message);
+      
+      const rawText = data.candidates[0].content.parts[0].text;
+      const jsonStr = extractJsonFromString(rawText);
+      const extractedMacros = JSON.parse(jsonStr);
+
+      return new Response(JSON.stringify(extractedMacros), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     // --- MODO: ANALIZAR MACROS (HÍBRIDO CACHÉ + IA) ---
@@ -325,11 +390,14 @@ Analiza esto y dime: ¿Cómo es mi alimentación? ¿Cómo va todo?`;
 Eres un asistente que extrae alimentos de un texto.
 Devuelve un JSON estricto con un arreglo "items".
 Cada item debe tener:
-- "name": el nombre singular y genérico del alimento (Ej: "huevo frito", "manzana"). ¡OBLIGATORIO SEPARAR ALIMENTOS! Si el usuario enumera varios alimentos juntos usando "y" o "con" (ej: "dos huevos con una tostada y media palta"), DEBES devolver elementos separados en el array: uno para "huevo revuelto", otro para "tostada", otro para "palta". ¡NUNCA los combines en un solo nombre largo! ¡PROHIBIDO INCLUIR NÚMEROS O PESOS EN EL NOMBRE!
+- "name": el nombre singular y genérico del alimento (Ej: "huevo frito", "manzana"). ¡OBLIGATORIO SEPARAR ALIMENTOS! Si el usuario enumera varios alimentos juntos usando "y" o "con", devuélvelos separados. ¡NUNCA los combines en un solo nombre largo! ¡PROHIBIDO INCLUIR NÚMEROS O PESOS EN EL NOMBRE!
+CRÍTICO - NOMBRES EXACTOS: NO inventes ni agregues adjetivos que el usuario no dijo. Si el usuario dice "arroz", el nombre debe ser EXACTAMENTE "arroz", NO "arroz blanco" ni "arroz integral". Debes ser literal.
 - "quantity": cantidad numérica. SIEMPRE usa decimales para fracciones (Ej: si el usuario dice "media palta" o "mitad de manzana", la cantidad es 0.5. Si dice "un cuarto", es 0.25).
 - "unit": unidad de medida ("unidad", "gramos", "taza", etc).
 CRÍTICO: Si el texto menciona un PESO en gramos (ej: "1 manzana de 230 gramos"), LA UNIDAD DEBE SER OBLIGATORIAMENTE "gramos" y LA CANTIDAD debe ser el peso numérico (230). NO uses "unidad" si se especifica el peso.
 - "original_text": el texto original detectado (Ej: "1 manzana de 230 gramos").
+
+CRÍTICO - PESOS COMPARTIDOS: Si el usuario indica un peso total para una mezcla de alimentos (ej: "300 gramos de arroz con papa" o "200g de pollo con ensalada"), DEBES separar OBLIGATORIAMENTE los ingredientes y dividir el peso equitativamente entre ellos (ej: 150 gramos de arroz y 150 gramos de papa). NUNCA dejes nombres combinados.
 
 CRÍTICO: Si el texto del usuario NO contiene alimentos reales (por ejemplo si dice "cualquier cosa", "nada", "hola", o habla de temas que no son comida), debes devolver OBLIGATORIAMENTE un arreglo vacío: { "items": [] }.
 
@@ -338,7 +406,7 @@ Salida Esperada:
 {
   "items": [
     { "name": "huevo frito", "quantity": 2, "unit": "unidad", "original_text": "dos huevos fritos" },
-    { "name": "arroz blanco cocido", "quantity": 150, "unit": "gramos", "original_text": "150 gramos de arroz" }
+    { "name": "arroz", "quantity": 150, "unit": "gramos", "original_text": "150 gramos de arroz" }
   ]
 }
 
@@ -476,7 +544,8 @@ Salida Esperada:
           total_protein: Number(match.base_protein) * item.quantity,
           total_carbs: Number(match.base_carbs) * item.quantity,
           total_fats: Number(match.base_fats) * item.quantity,
-          fuente_calculo: 'diccionario_local'
+          fuente_calculo: 'diccionario_local',
+          is_verified: match.is_verified || false
         })
       } else {
         // MISS EN CACHÉ -> Preguntar a Gemini por este alimento específico
@@ -576,7 +645,8 @@ Si es un alimento válido, devuelve un JSON con:
           total_protein: finalMacros.base_protein * item.quantity,
           total_carbs: finalMacros.base_carbs * item.quantity,
           total_fats: finalMacros.base_fats * item.quantity,
-          fuente_calculo: existingGlobal ? 'diccionario_local' : 'gemini'
+          fuente_calculo: existingGlobal ? 'diccionario_local' : 'gemini',
+          is_verified: false
         })
       }
     }

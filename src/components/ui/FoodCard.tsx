@@ -1,5 +1,5 @@
 import React from 'react';
-import { Edit2, Trash2, Check } from 'lucide-react';
+import { Edit2, Trash2, Check, BadgeCheck } from 'lucide-react';
 import type { FoodLog } from '../../types';
 
 interface FoodCardProps {
@@ -45,11 +45,11 @@ export const FoodCard: React.FC<FoodCardProps> = ({ log, onEdit, onDelete }) => 
         <div className="pr-4">
           <p className="text-sm font-semibold text-zinc-100 leading-tight flex items-center gap-1.5 flex-wrap">
             {getFormattedName(log, portions, isGrams)}
-            {log.fuente_calculo === 'diccionario_local' && (
-              <span title="Aprendido de tu diccionario" className="flex items-center justify-center w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400">
-                <Check className="w-2.5 h-2.5 font-bold" />
+            {log.is_verified ? (
+              <span title="Alimento Verificado Oficialmente" className="flex items-center justify-center text-emerald-500">
+                <BadgeCheck className="w-[18px] h-[18px] drop-shadow-[0_0_8px_rgba(16,185,129,0.3)]" />
               </span>
-            )}
+            ) : null}
           </p>
         </div>
         <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20 whitespace-nowrap">

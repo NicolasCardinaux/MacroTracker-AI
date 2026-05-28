@@ -127,6 +127,21 @@ export const api = {
     return true;
   },
 
+  async deleteFoodLogs(logIds: number[]): Promise<boolean> {
+    const { error } = await supabase
+      .from('food_logs')
+      .delete()
+      .in('id', logIds);
+
+    if (error) {
+      console.error('Error deleting food logs:', error);
+      return false;
+    }
+    return true;
+  },
+
+
+
   // --- AVANCES (BODY METRICS) ---
   async getBodyMetrics(userId: string): Promise<BodyMetric[]> {
     const { data, error } = await supabase
@@ -198,6 +213,175 @@ export const api = {
     }
   },
 
+  async getOriginalMacros(foodName: string): Promise<{base_calories: number, base_protein: number, base_carbs: number, base_fats: number} | null> {
+    try {
+      let existingUnit = 'unidad';
+      const lowerFoodName = foodName.toLowerCase();
+      if (lowerFoodName.includes('gramo') || lowerFoodName.includes('gr ') || lowerFoodName.match(/\bgr\b/)) {
+         existingUnit = 'gramos';
+      } else if (lowerFoodName.includes('ml')) {
+         existingUnit = 'ml';
+      }
+
+      const cleanName = foodName.split(' (')[0].trim().replace(/^(\d+(?:\.\d+)?\s*(?:unidades|unidad|gramos|gramo|gr|g|ml)?\s*(?:de\s*)?)/i, '').trim();
+      
+      const { data, error } = await supabase
+        .from('food_dictionary')
+        .select('base_calories, base_protein, base_carbs, base_fats, default_unit')
+        .ilike('food_name', cleanName)
+        .is('user_id', null);
+
+      if (error) {
+        console.error('Error fetching original macros:', error);
+        return null;
+      }
+
+      if (data && data.length > 0) {
+        // Find the one that matches our extracted unit, or fallback to the first one
+        const exactMatch = data.find(d => d.default_unit === existingUnit);
+        const matchToUse = exactMatch || data[0];
+        return {
+          base_calories: matchToUse.base_calories,
+          base_protein: matchToUse.base_protein,
+          base_carbs: matchToUse.base_carbs,
+          base_fats: matchToUse.base_fats
+        };
+      }
+      return null;
+    } catch (e) {
+      console.error('Error in getOriginalMacros:', e);
+      return null;
+    }
+  },
+
+  async checkIfVerified(foodName: string, calories: number, protein: number, carbs: number, fats: number): Promise<boolean> {
+    const original = await this.getOriginalMacros(foodName);
+    if (!original) return false;
+    
+    // Allow small rounding differences
+    const isCalMatch = Math.abs(original.base_calories - calories) < 1;
+    const isProMatch = Math.abs(original.base_protein - protein) < 1;
+    const isCarMatch = Math.abs(original.base_carbs - carbs) < 1;
+    const isFatMatch = Math.abs(original.base_fats - fats) < 1;
+    
+    return isCalMatch && isProMatch && isCarMatch && isFatMatch;
+  },
+
+  async scanBarcode(barcode: string): Promise<any | null> {
+    try {
+      // 1. Check local DB (global food_dictionary)
+      const { data: localData } = await supabase
+        .from('food_dictionary')
+        .select('*')
+        .eq('barcode', barcode)
+        .is('user_id', null)
+        .limit(1);
+
+      if (localData && localData.length > 0) {
+        return {
+          source: 'local',
+          product: {
+            name: localData[0].food_name,
+            base_calories: localData[0].base_calories,
+            base_protein: localData[0].base_protein,
+            base_carbs: localData[0].base_carbs,
+            base_fats: localData[0].base_fats,
+            unit: localData[0].default_unit
+          }
+        };
+      }
+
+      // 2. Check Open Food Facts
+      const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`);
+      const data = await response.json();
+
+      if (data && data.status === 1 && data.product) {
+        const p = data.product;
+        const nut = p.nutriments || {};
+        
+        // Extract 100g or per serving. We prefer 100g/ml if available, else serving.
+        // Let's standardise on 100g/100ml as base macros.
+        let base_cals = nut['energy-kcal_100g'];
+        let base_prot = nut['proteins_100g'];
+        let base_carb = nut['carbohydrates_100g'];
+        let base_fat = nut['fat_100g'];
+
+        // Fallback to serving if 100g is missing
+        if (base_cals === undefined && nut['energy-kcal_serving'] !== undefined) {
+          const servingSize = parseFloat(p.serving_quantity) || 100;
+          const factor = 100 / servingSize;
+          base_cals = nut['energy-kcal_serving'] * factor;
+          base_prot = (nut['proteins_serving'] || 0) * factor;
+          base_carb = (nut['carbohydrates_serving'] || 0) * factor;
+          base_fat = (nut['fat_serving'] || 0) * factor;
+        }
+
+        if (base_cals !== undefined) {
+           return {
+             source: 'openfoodfacts',
+             product: {
+               name: p.product_name_es || p.product_name || "Producto escaneado",
+               base_calories: base_cals,
+               base_protein: base_prot || 0,
+               base_carbs: base_carb || 0,
+               base_fats: base_fat || 0,
+               unit: 'gramos' // usually 100g is standard
+             }
+           };
+        }
+      }
+
+      return null;
+    } catch (e) {
+      console.error("Error scanning barcode", e);
+      return null;
+    }
+  },
+
+  async analyzeNutritionLabel(base64Image: string, barcode: string): Promise<any> {
+    const { data, error } = await supabase.functions.invoke('gemini-nutrition', {
+      body: { 
+        action: 'analyze_nutrition_label',
+        image: base64Image,
+        barcode: barcode
+      }
+    });
+
+    if (error) {
+      console.error('Edge function error:', error);
+      throw new Error('Fallo al analizar la imagen.');
+    }
+
+    return data;
+  },
+
+  async saveAiConsultation(userId: string, text: string): Promise<boolean> {
+    const { error } = await supabase
+      .from('ai_consultations')
+      .insert({ user_id: userId, consultation_text: text });
+      
+    if (error) {
+      console.error('Error saving AI consultation:', error);
+      alert('Error guardando la consulta: ' + (error.message || JSON.stringify(error)));
+      return false;
+    }
+    return true;
+  },
+
+  async getAiConsultations(userId: string): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('ai_consultations')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching AI consultations:', error);
+      return [];
+    }
+    return data || [];
+  },
+
   async getWeeklyAnalysis(weeklyData: any[], goals: any): Promise<string | null> {
     try {
       const { data, error } = await supabase.functions.invoke('gemini-nutrition', {
@@ -225,5 +409,45 @@ export const api = {
     }
 
     return data.transcript || '';
+  },
+
+  async getSavedMeals(userId: string) {
+    const { data, error } = await supabase
+      .from('saved_meals')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching saved meals:', error);
+      return [];
+    }
+    return data;
+  },
+
+  async saveMealCombo(comboData: Omit<SavedMeal, 'id' | 'created_at'>) {
+    const { data, error } = await supabase
+      .from('saved_meals')
+      .insert([comboData])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error saving meal combo:', error);
+      throw error;
+    }
+    return data;
+  },
+
+  async deleteSavedMeal(id: string) {
+    const { error } = await supabase
+      .from('saved_meals')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error deleting saved meal:', error);
+      throw error;
+    }
   }
 };

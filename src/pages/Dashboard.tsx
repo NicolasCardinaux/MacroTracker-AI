@@ -6,6 +6,7 @@ import { ProgressRing } from '../components/ui/ProgressRing';
 import { ProgressBar } from '../components/ui/ProgressBar';
 import { MealAccordion } from '../components/ui/MealAccordion';
 import { CategoryInputModal } from '../components/ui/CategoryInputModal';
+import { BarcodeScannerModal } from '../components/ui/BarcodeScannerModal';
 import { FoodEditModal } from '../components/ui/FoodEditModal';
 import { AccountModal } from '../components/ui/AccountModal';
 import { Logo } from '../components/ui/Logo';
@@ -13,7 +14,9 @@ import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { User as UserIcon, X as XIcon, ChevronLeft, ChevronRight, Trash2, AlertTriangle, CheckCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
-import type { DailyGoals, FoodLog, GeminiNutritionResponse, MealType } from '../types';
+import type { DailyGoals, FoodLog, GeminiNutritionResponse, MealType, SavedMeal } from '../types';
+import { SaveComboModal } from '../components/ui/SaveComboModal';
+import { LoadComboModal } from '../components/ui/LoadComboModal';
 
 export const Dashboard: React.FC = () => {
   const { user, signOut } = useAuth();
@@ -37,6 +40,14 @@ export const Dashboard: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [iaResponse, setIaResponse] = useState<GeminiNutritionResponse | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [showScanner, setShowScanner] = useState(false);
+  
+  // Combo States
+  const [saveComboData, setSaveComboData] = useState<{ meal: MealType, logs: FoodLog[] } | null>(null);
+  const [loadComboMeal, setLoadComboMeal] = useState<MealType | null>(null);
+  
+  // Clear Meal State
+  const [mealToClear, setMealToClear] = useState<{ meal: MealType, logIds: number[] } | null>(null);
 
   useEffect(() => {
     if (user) loadData();
@@ -44,7 +55,7 @@ export const Dashboard: React.FC = () => {
 
   // Bloquear scroll cuando los modales inline están abiertos
   useEffect(() => {
-    if (showNewCategoryModal || logToDelete !== null || showAccountModal || errorAlert !== null || successAlert !== null) {
+    if (showNewCategoryModal || logToDelete !== null || mealToClear !== null || showAccountModal || errorAlert !== null || successAlert !== null) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
@@ -136,6 +147,61 @@ export const Dashboard: React.FC = () => {
     }
   };
 
+  const handleScannerResult = async (productData: any, barcode: string) => {
+    if (!activeCategoryInput || !user) return;
+    
+    // Simulate GeminiNutritionResponse format so it plugs directly into the flow
+    const result: GeminiNutritionResponse = {
+      foods: [{
+        name: productData.name,
+        amount: "1 " + (productData.unit || "gramos"),
+        quantity: 1,
+        unit: productData.unit || "gramos",
+        base_calories: productData.base_calories,
+        base_protein: productData.base_protein,
+        base_carbs: productData.base_carbs,
+        base_fats: productData.base_fats,
+        total_calories: productData.base_calories,
+        total_protein: productData.base_protein,
+        total_carbs: productData.base_carbs,
+        total_fats: productData.base_fats,
+        fuente_calculo: 'diccionario_local',
+        is_verified: true
+      }]
+    };
+    
+    // We auto-save it using handleConfirmSaveNew
+    // But since handleConfirmSaveNew saves, let's just pass it
+    // Wait, handleConfirmSaveNew sets `iaResponse` if not auto-confirming, 
+    // actually `handleConfirmSaveNew` closes input modal and saves directly because it's a confirmed item?
+    // Let's check: handleConfirmSaveNew saves the food directly.
+    await handleConfirmSaveNew(activeCategoryInput, productData.name, result);
+    
+    // We should also save it to the global dictionary if it was newly scanned from Open Food Facts / Vision!
+    // We will do this by checking if it already exists, but `scanBarcode` handles Open Food Facts!
+    // However, saving to global DB is done later if needed.
+    // Wait, the task says: "Guardamos el producto en la base de datos Global con ese código de barras para que el próximo usuario que lo escanee lo encuentre gratis."
+    // Let's auto-save to global dictionary if it has a barcode!
+    try {
+      // Check if it already exists
+      const { data: exists } = await supabase.from('food_dictionary').select('id').eq('barcode', barcode).is('user_id', null).limit(1);
+      if (!exists || exists.length === 0) {
+        await supabase.from('food_dictionary').insert({
+          food_name: productData.name,
+          base_calories: productData.base_calories,
+          base_protein: productData.base_protein,
+          base_carbs: productData.base_carbs,
+          base_fats: productData.base_fats,
+          default_unit: productData.unit || "gramos",
+          barcode: barcode,
+          is_verified: true
+        });
+      }
+    } catch (e) {
+      console.error("Error saving to global dictionary", e);
+    }
+  };
+
   const handleConfirmSaveNew = async (mealType: string, rawInput: string, aiData: GeminiNutritionResponse) => {
     if (!user) return;
     
@@ -145,9 +211,8 @@ export const Dashboard: React.FC = () => {
     const foods = aiData.foods?.length > 0 ? aiData.foods : [{ name: rawInput, amount: '', quantity: 1, unit: 'unidad', base_calories: 0, base_protein: 0, base_carbs: 0, base_fats: 0, total_calories: 0, total_protein: 0, total_carbs: 0, total_fats: 0 }];
     
     const logsToInsert = foods.map(f => {
-      const q = Number(f.quantity) || 1;
-      const u = f.unit === 'unidad' ? (q === 1 ? '' : 'unidades ') : (f.unit + ' de ');
-      const cleanName = `${q} ${u}${f.name}`.trim().replace(/\s+/g, ' ');
+      const u = f.unit === 'unidad' ? '' : (f.unit + ' de ');
+      const cleanName = `${u}${f.name}`.trim().replace(/\s+/g, ' ');
       const finalInputText = isCustom ? `[CUSTOM:${mealType}] ${cleanName}` : cleanName;
 
       return {
@@ -162,7 +227,9 @@ export const Dashboard: React.FC = () => {
         calories: Math.round(Number(f.total_calories !== undefined ? f.total_calories : (f as any).calories || 0)),
         protein: Math.round(Number(f.total_protein !== undefined ? f.total_protein : (f as any).protein || 0)),
         carbs: Math.round(Number(f.total_carbs !== undefined ? f.total_carbs : (f as any).carbs || 0)),
-        fats: Math.round(Number(f.total_fats !== undefined ? f.total_fats : (f as any).fats || 0))
+        fats: Math.round(Number(f.total_fats !== undefined ? f.total_fats : (f as any).fats || 0)),
+        fuente_calculo: f.fuente_calculo,
+        is_verified: f.is_verified || false
       };
     });
 
@@ -213,7 +280,18 @@ export const Dashboard: React.FC = () => {
       }
     }
     
-    const finalData = { ...updatedData, raw_input: newRawInput || '' };
+    let isStillVerified = false;
+    if (updatedData.base_calories !== undefined && newRawInput) {
+       isStillVerified = await api.checkIfVerified(
+          newRawInput, 
+          updatedData.base_calories, 
+          updatedData.base_protein || 0, 
+          updatedData.base_carbs || 0, 
+          updatedData.base_fats || 0
+       );
+    }
+    
+    const finalData = { ...updatedData, raw_input: newRawInput || '', is_verified: isStillVerified };
 
     const success = await api.updateFoodLog(id, finalData);
     if (success) {
@@ -231,6 +309,87 @@ export const Dashboard: React.FC = () => {
       setTimeout(() => setSuccessAlert(null), 2500);
     } else {
       setErrorAlert("Error al actualizar.");
+    }
+  };
+
+  const handleClearMeal = (meal: MealType, logIds: number[]) => {
+    setMealToClear({ meal, logIds });
+  };
+
+  const confirmClearMeal = async () => {
+    if (!mealToClear) return;
+    
+    const { meal, logIds } = mealToClear;
+    const success = await api.deleteFoodLogs(logIds);
+    if (success) {
+      setLogs(logs.filter(l => !logIds.includes(l.id)));
+      setSuccessAlert(`Se vació ${meal} correctamente`);
+      setTimeout(() => setSuccessAlert(null), 2500);
+    } else {
+      setErrorAlert(`Error al vaciar ${meal}`);
+    }
+    setMealToClear(null);
+  };
+
+  // --- HANDLERS DE COMBOS ---
+  const handleSaveCombo = async (name: string) => {
+    if (!user || !saveComboData) return;
+    
+    const items = saveComboData.logs.map(log => ({
+      raw_input: log.raw_input,
+      calories: log.calories,
+      protein: log.protein,
+      carbs: log.carbs,
+      fats: log.fats,
+      quantity: log.quantity,
+      base_calories: log.base_calories,
+      base_protein: log.base_protein,
+      base_carbs: log.base_carbs,
+      base_fats: log.base_fats,
+      is_verified: log.is_verified
+    }));
+
+    try {
+      await api.saveMealCombo({
+        user_id: user.id,
+        combo_name: name,
+        items
+      });
+      setSuccessAlert('¡Combo guardado exitosamente!');
+    } catch (e) {
+      setErrorAlert('Error al guardar el combo. Intenta nuevamente.');
+    }
+  };
+
+  const handleLoadCombo = async (combo: SavedMeal) => {
+    if (!user || !loadComboMeal) return;
+    
+    try {
+      const logsToCreate = combo.items.map(item => ({
+        user_id: user.id,
+        date: selectedDate,
+        meal_type: loadComboMeal,
+        raw_input: item.raw_input,
+        calories: item.calories,
+        protein: item.protein,
+        carbs: item.carbs,
+        fats: item.fats,
+        quantity: item.quantity,
+        base_calories: item.base_calories,
+        base_protein: item.base_protein,
+        base_carbs: item.base_carbs,
+        base_fats: item.base_fats,
+        is_verified: item.is_verified,
+        fuente_calculo: 'diccionario_local' // Combos loaded are basically from cache
+      }));
+
+      const newLogs = await api.addFoodLogs(user.id, logsToCreate as any);
+      if (newLogs) {
+        setLogs([...logs, ...newLogs]);
+        setSuccessAlert(`¡${combo.combo_name} cargado con éxito!`);
+      }
+    } catch (e) {
+      setErrorAlert('Error al cargar el combo. Intenta nuevamente.');
     }
   };
 
@@ -370,6 +529,9 @@ export const Dashboard: React.FC = () => {
                     onDeleteLog={handleDeleteLog}
                     onEditLog={setEditingLog}
                     onAddLog={(m) => setActiveCategoryInput(m)}
+                    onSaveCombo={(m, l) => setSaveComboData({ meal: m, logs: l })}
+                    onLoadCombo={(m) => setLoadComboMeal(m)}
+                    onClearMeal={handleClearMeal}
                   />
                 );
               });
@@ -399,6 +561,14 @@ export const Dashboard: React.FC = () => {
           onCancel={closeInputModal}
           onProcessText={handleProcessText}
           onTextChange={manuallySetTranscript}
+          onOpenScanner={() => setShowScanner(true)}
+        />
+      )}
+
+      {showScanner && (
+        <BarcodeScannerModal 
+          onClose={() => setShowScanner(false)}
+          onResult={handleScannerResult}
         />
       )}
 
@@ -416,7 +586,7 @@ export const Dashboard: React.FC = () => {
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setShowNewCategoryModal(false)}></div>
           <div className="relative bg-zinc-900/95 backdrop-blur-xl w-[320px] rounded-[32px] p-6 border border-zinc-800 shadow-2xl animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh] overflow-hidden m-auto">
-            <div className="overflow-y-auto flex-1 hide-scrollbar">
+            <div className="overflow-y-auto flex-1 hide-scrollbar p-1 -m-1">
             <h3 className="text-xl font-bold text-white mb-2 text-center">Nueva Categoría</h3>
             <p className="text-sm text-zinc-400 mb-6 text-center">Ej. Pre-entreno, Batido Nocturno.</p>
             
@@ -471,7 +641,7 @@ export const Dashboard: React.FC = () => {
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setLogToDelete(null)}></div>
           <div className="relative bg-zinc-900/95 backdrop-blur-xl w-[320px] rounded-[32px] p-6 border border-zinc-800 shadow-2xl animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh] overflow-hidden m-auto">
-            <div className="overflow-y-auto flex-1 hide-scrollbar">
+            <div className="overflow-y-auto flex-1 hide-scrollbar p-1 -m-1">
             <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-500/20">
               <Trash2 className="w-8 h-8 text-red-500" />
             </div>
@@ -487,6 +657,38 @@ export const Dashboard: React.FC = () => {
               </button>
               <button 
                 onClick={() => setLogToDelete(null)}
+                className="w-full py-4 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold rounded-2xl transition-colors"
+              >
+                Cancelar
+              </button>
+            </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Modal de Confirmación de Borrado de Comida Entera */}
+      {mealToClear !== null && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setMealToClear(null)}></div>
+          <div className="relative bg-zinc-900/95 backdrop-blur-xl w-[320px] rounded-[32px] p-6 border border-zinc-800 shadow-2xl animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[90vh] overflow-hidden m-auto">
+            <div className="overflow-y-auto flex-1 hide-scrollbar">
+            <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-500/20">
+              <Trash2 className="w-8 h-8 text-red-500" />
+            </div>
+            <h3 className="text-xl font-bold text-white mb-2 text-center">¿Vaciar {mealToClear.meal}?</h3>
+            <p className="text-sm text-zinc-400 mb-6 text-center">Se eliminarán {mealToClear.logIds.length} alimentos. Esta acción no se puede deshacer.</p>
+            
+            <div className="flex flex-col gap-3">
+              <button 
+                onClick={confirmClearMeal}
+                className="w-full py-4 bg-red-500 hover:bg-red-600 text-white font-bold rounded-2xl transition-colors"
+              >
+                Sí, Vaciar Todo
+              </button>
+              <button 
+                onClick={() => setMealToClear(null)}
                 className="w-full py-4 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold rounded-2xl transition-colors"
               >
                 Cancelar
@@ -529,6 +731,23 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>,
         document.body
+      )}
+
+      {/* Combo Modals */}
+      {saveComboData && (
+        <SaveComboModal
+          logs={saveComboData.logs}
+          onClose={() => setSaveComboData(null)}
+          onSave={handleSaveCombo}
+        />
+      )}
+
+      {loadComboMeal && (
+        <LoadComboModal
+          mealType={loadComboMeal}
+          onClose={() => setLoadComboMeal(null)}
+          onLoad={handleLoadCombo}
+        />
       )}
 
     </MobileLayout>
