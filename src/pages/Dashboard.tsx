@@ -14,6 +14,7 @@ import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
 import { User as UserIcon, X as XIcon, ChevronLeft, ChevronRight, Trash2, AlertTriangle, CheckCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
+import { supabase } from '../lib/supabase';
 import type { DailyGoals, FoodLog, GeminiNutritionResponse, MealType, SavedMeal } from '../types';
 import { SaveComboModal } from '../components/ui/SaveComboModal';
 import { LoadComboModal } from '../components/ui/LoadComboModal';

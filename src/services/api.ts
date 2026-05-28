@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import type { DailyGoals, FoodLog, GeminiNutritionResponse, BodyMetric } from '../types';
+import type { DailyGoals, FoodLog, GeminiNutritionResponse, BodyMetric, SavedMeal } from '../types';
 import { getLocalDateString } from '../utils/date';
 
 export const api = {

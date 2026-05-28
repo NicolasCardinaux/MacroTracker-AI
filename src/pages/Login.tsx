@@ -1,12 +1,16 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Logo } from '../components/ui/Logo';
+import { PrivacyPolicyModal } from '../components/ui/PrivacyPolicyModal';
+import { TermsModal } from '../components/ui/TermsModal';
 
 export const Login: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPrivacy, setShowPrivacy] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -94,9 +98,24 @@ export const Login: React.FC = () => {
                 {loading ? 'Verificando credenciales...' : 'Ingresar al Panel'}
               </button>
             </div>
+            
+            <div className="mt-6 text-center text-xs text-zinc-500 space-y-2">
+              <p>
+                Al registrarte o iniciar sesión, confirmas que has leído y aceptas nuestros{' '}
+                <button type="button" onClick={() => setShowTerms(true)} className="text-primary-400 hover:text-primary-300 underline underline-offset-2 transition-colors">Términos y Condiciones</button>
+                {' '}y nuestra{' '}
+                <button type="button" onClick={() => setShowPrivacy(true)} className="text-primary-400 hover:text-primary-300 underline underline-offset-2 transition-colors">Política de Privacidad</button>.
+              </p>
+              <p className="opacity-75">
+                MacroTracker AI no provee asesoramiento médico ni nutricional profesional.
+              </p>
+            </div>
           </form>
         </div>
       </div>
+      
+      {showPrivacy && <PrivacyPolicyModal onClose={() => setShowPrivacy(false)} />}
+      {showTerms && <TermsModal onClose={() => setShowTerms(false)} />}
     </div>
   );
 };

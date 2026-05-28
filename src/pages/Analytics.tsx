@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { MobileLayout } from '../components/layout/MobileLayout';
 import { createPortal } from 'react-dom';
 import { BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
-import { ChevronLeft, Calendar, Bot, Sparkles, Maximize2, X, Save, History, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import { ChevronLeft, Calendar, Bot, Sparkles, Maximize2, X, History, ChevronDown, ChevronUp } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { supabase } from '../lib/supabase';
@@ -19,7 +19,6 @@ export const Analytics: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   const [aiHistory, setAiHistory] = useState<AIConsultation[]>([]);
   const [isAiMinimized, setIsAiMinimized] = useState(false);
-  const [isSavingAi, setIsSavingAi] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
 
   const getAnalysisCount = () => {
@@ -62,18 +61,6 @@ export const Analytics: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     setAiHistory(history);
   };
 
-  const handleSaveConsultation = async () => {
-    if (!user || !aiRecommendation) return;
-    setIsSavingAi(true);
-    const success = await api.saveAiConsultation(user.id, aiRecommendation);
-    if (success) {
-      await loadAiHistory();
-      setAiRecommendation(null);
-      setIsAiMinimized(false);
-      setShowHistory(true);
-    }
-    setIsSavingAi(false);
-  };
 
   const loadAnalytics = async () => {
     if (!user) return;

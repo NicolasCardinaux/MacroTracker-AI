@@ -1,5 +1,5 @@
 import React from 'react';
-import { Edit2, Trash2, Check, BadgeCheck } from 'lucide-react';
+import { Edit2, Trash2, BadgeCheck } from 'lucide-react';
 import type { FoodLog } from '../../types';
 
 interface FoodCardProps {
